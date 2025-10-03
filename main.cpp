@@ -24,6 +24,8 @@ private:
     const uint32_t HEIGHT = 600;
     const int MAX_FRAMES_IN_FLIGHT = 2;
 
+    VkClearValue clearColor = { {{0.1f, 0.0f, 0.0f, 1.0f}} };
+
     const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
     };
@@ -970,7 +972,6 @@ private:
         renderPassInfo.framebuffer = swapChainFramebuffers[swapChainBufferIndex];
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swapChainExtent;
-        VkClearValue clearColor = { {{0.1f, 0.0f, 0.0f, 1.0f}} };
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
