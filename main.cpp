@@ -699,6 +699,14 @@ private:
             if (vkCreateImageView(logicalDevice, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create image views!");
             }
+
+            // ���O���悤�Ƃ������ǃ����N�G���[���o��
+            //VkDebugMarkerObjectNameInfoEXT nameInfo{};
+            //nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT;
+            //nameInfo.objectType = VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT;
+            //nameInfo.object = (uint64_t)swapChainImageViews[i];
+            //nameInfo.pObjectName = "SwapChainImageView " + i;
+            //vkDebugMarkerSetObjectNameEXT(logicalDevice, &nameInfo);
         }
     }
 #pragma endregion
