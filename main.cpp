@@ -700,7 +700,7 @@ private:
                 throw std::runtime_error("failed to create image views!");
             }
 
-            // ï¿½ï¿½ï¿½Oï¿½Â‚ï¿½ï¿½æ‚¤ï¿½Æ‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Çƒï¿½ï¿½ï¿½ï¿½Nï¿½Gï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½oï¿½ï¿½
+            // –¼‘O‚Â‚¯‚æ‚¤‚Æ‚µ‚½‚¯‚ÇƒŠƒ“ƒNƒGƒ‰[‚ªo‚é
             //VkDebugMarkerObjectNameInfoEXT nameInfo{};
             //nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT;
             //nameInfo.objectType = VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT;
