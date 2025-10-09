@@ -88,7 +88,7 @@ private:
 
         // SwapChainの作成
         swapChain = createSwapChain(physicalDevice, surface, swapChainImages);
-        createImageViews(swapChainImages);
+        swapChainImageViews = createImageViews(swapChainImages);
 
         // パイプラインの作成
         renderPass = createRenderPass(swapChainImageFormat);
@@ -109,8 +109,16 @@ private:
     {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+        glfwSetWindowUserPointer(window, this);
+        glfwSetFramebufferSizeCallback(window, resizedFrameBufferCallback);
+    }
+
+    static void resizedFrameBufferCallback(GLFWwindow* window, int width, int height)
+    {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->frameBufferResized = true;
     }
 
     void mainLoop()
@@ -129,10 +137,21 @@ private:
     {
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
         vkWaitForFences(logicalDevice, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-        vkResetFences(logicalDevice, 1, &inFlightFences[currentFrame]);
 
         uint32_t imageIndex;
-        vkAcquireNextImageKHR(logicalDevice, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+        auto result = vkAcquireNextImageKHR(logicalDevice, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+        {
+            recreateSwapChain(physicalDevice, surface, swapChainImages, swapChainImageViews, renderPass, swapChainExtent);
+            return;
+        }
+        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            throw std::runtime_error("failed to acquire swap chain image!");
+        }
+
+        vkResetFences(logicalDevice, 1, &inFlightFences[currentFrame]);
+
 
         vkResetCommandBuffer(commandBuffers[currentFrame], 0);
         recordCommandBuffer(commandBuffers[currentFrame], renderPass, imageIndex, swapChainExtent);
@@ -166,8 +185,19 @@ private:
         presentInfo.pSwapchains = swapChains;
         presentInfo.pImageIndices = &imageIndex;
 
-        vkQueuePresentKHR(presentQueue, &presentInfo);
+        result = vkQueuePresentKHR(presentQueue, &presentInfo);
+        if (frameBufferResized || result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+        {
+            recreateSwapChain(physicalDevice, surface, swapChainImages, swapChainImageViews, renderPass, swapChainExtent);
+            frameBufferResized = false;
+            return;
+        }
+        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            throw std::runtime_error("failed to present swap chain image!");
+        }
     }
+
+    bool frameBufferResized = false;
 
     void cleanup() {
         if (enableValidationLayers) {
@@ -178,9 +208,7 @@ private:
 
         vkDestroyCommandPool(logicalDevice, commandPool, nullptr);
 
-        for (auto framebuffer : swapChainFramebuffers) {
-            vkDestroyFramebuffer(logicalDevice, framebuffer, nullptr);
-        }
+        cleanupSwapChain(swapChainImageViews, swapChain, swapChainFramebuffers, logicalDevice);
 
         vkDestroyPipeline(logicalDevice, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(logicalDevice, pipelineLayout, nullptr);
@@ -188,11 +216,6 @@ private:
 
         vkDestroyShaderModule(logicalDevice, fragShaderModule, nullptr);
         vkDestroyShaderModule(logicalDevice, vertShaderModule, nullptr);
-
-        for(auto imageView : swapChainImageViews) {
-            vkDestroyImageView(logicalDevice, imageView, nullptr);
-        }
-        vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
 
         vkDestroyDevice(logicalDevice, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
@@ -676,9 +699,9 @@ private:
     /// <summary>
     /// スワップチェインのイメージビューを作成する
     /// </summary>
-    void createImageViews(std::vector<VkImage> swapChainImages)
+    std::vector<VkImageView> createImageViews(std::vector<VkImage> swapChainImages)
     {
-        swapChainImageViews.resize(swapChainImages.size());
+        std::vector<VkImageView> swapChainImageViews(swapChainImages.size());
         for (size_t i = 0; i < swapChainImageViews.size(); i++)
         {
             VkImageViewCreateInfo createInfo{};
@@ -708,6 +731,30 @@ private:
             //nameInfo.pObjectName = "SwapChainImageView " + i;
             //vkDebugMarkerSetObjectNameEXT(logicalDevice, &nameInfo);
         }
+
+        return swapChainImageViews;
+    }
+
+    void recreateSwapChain(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, std::vector<VkImage> swapChainImages, std::vector<VkImageView> swapChainImageViews, VkRenderPass renderPass, VkExtent2D swapChainExtent)
+    {
+        vkDeviceWaitIdle(logicalDevice);
+
+        cleanupSwapChain(swapChainImageViews, swapChain, swapChainFramebuffers, logicalDevice);
+
+        swapChain = createSwapChain(physicalDevice, surface, swapChainImages);
+        swapChainImageViews = createImageViews(swapChainImages);
+        swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
+    }
+
+    void cleanupSwapChain(std::vector<VkImageView> swapChainImageViews, VkSwapchainKHR swapChain, std::vector<VkFramebuffer> swapChainFramebuffers, VkDevice logicalDevice)
+    {
+        for (auto framebuffer : swapChainFramebuffers) {
+            vkDestroyFramebuffer(logicalDevice, framebuffer, nullptr);
+        }
+        for (auto imageView : swapChainImageViews) {
+            vkDestroyImageView(logicalDevice, imageView, nullptr);
+        }
+        vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
     }
 #pragma endregion
 
