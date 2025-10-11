@@ -73,6 +73,22 @@ private:
     std::vector<VkFence> inFlightFences;
 
     uint32_t currentFrame = 0;
+    
+    void initWindow()
+    {
+        glfwInit();
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+        glfwSetWindowUserPointer(window, this);
+        glfwSetFramebufferSizeCallback(window, resizedFrameBufferCallback);
+    }
+
+    static void resizedFrameBufferCallback(GLFWwindow* window, int width, int height)
+    {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->frameBufferResized = true;
+    }
 
     void initVulkan() {
         auto vkInstnace = createInstance();
@@ -105,21 +121,6 @@ private:
         createSyncObjects();
     }
 
-    void initWindow()
-    {
-        glfwInit();
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-
-        glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, resizedFrameBufferCallback);
-    }
-
-    static void resizedFrameBufferCallback(GLFWwindow* window, int width, int height)
-    {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-        app->frameBufferResized = true;
-    }
 
     void mainLoop()
     {
