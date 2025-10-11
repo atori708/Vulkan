@@ -109,10 +109,9 @@ private:
     VkCommandPool tempCommandPool;
     std::vector<VkCommandBuffer> commandBuffers;
 
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
+    VkBuffer vertexAndIndexBuffer;
+    VkDeviceMemory vertexAndIndexBufferMemory;
+    VkDeviceSize indexBufferOffset;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
@@ -168,8 +167,7 @@ private:
         createSyncObjects();
 
         // 頂点バッファとインデックスバッファの作成
-        vertexBuffer = createVertexBuffer(logicalDevice, vertices, vertexBufferMemory);
-        indexBuffer = createIndexBuffer(logicalDevice, indices, indexBufferMemory);
+        vertexAndIndexBuffer = createVertexAndIndexBuffer(logicalDevice, vertices, indices, indexBufferOffset, vertexAndIndexBufferMemory);
     }
 
     void mainLoop()
@@ -254,11 +252,8 @@ private:
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
 
-        vkDestroyBuffer(logicalDevice, vertexBuffer, nullptr);
-        vkFreeMemory(logicalDevice, vertexBufferMemory, nullptr);
-
-        vkDestroyBuffer(logicalDevice, indexBuffer, nullptr);
-        vkFreeMemory(logicalDevice, indexBufferMemory, nullptr);
+        vkDestroyBuffer(logicalDevice, vertexAndIndexBuffer, nullptr);
+        vkFreeMemory(logicalDevice, vertexAndIndexBufferMemory, nullptr);
 
         destroySyncObjects();
 
@@ -1118,12 +1113,12 @@ private:
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        VkBuffer vertexBuffers[] = { vertexBuffer };
+        VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(commandBuffer, vertexAndIndexBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT16);
 
-        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
@@ -1170,14 +1165,14 @@ private:
         vkUnmapMemory(device, stagingBufferMemory);
 
         // GPUのVertex Bufferにデータをコピーする
-        VkBuffer vertexBuffer;
-        createBuffer(device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, bufferMemory);
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+        VkBuffer vertexAndIndexBuffer;
+        createBuffer(device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexAndIndexBuffer, bufferMemory);
+        copyBuffer(stagingBuffer, vertexAndIndexBuffer, bufferSize);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
 
-        return vertexBuffer;
+        return vertexAndIndexBuffer;
     }
 
     VkBuffer createIndexBuffer(const VkDevice device, const std::vector<uint16_t> indices, VkDeviceMemory& bufferMemory)
@@ -1194,14 +1189,66 @@ private:
         vkUnmapMemory(device, stagingBufferMemory);
 
         // GPUのVertex Bufferにデータをコピーする
-        VkBuffer vertexBuffer;
-        createBuffer(device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, bufferMemory);
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+        VkBuffer vertexAndIndexBuffer;
+        createBuffer(device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexAndIndexBuffer, bufferMemory);
+        copyBuffer(stagingBuffer, vertexAndIndexBuffer, bufferSize);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
 
-        return vertexBuffer;
+        return vertexAndIndexBuffer;
+    }
+
+    VkBuffer createVertexAndIndexBuffer(const VkDevice device, const std::vector<Vertex> vertices, const std::vector<uint16_t> indices, VkDeviceSize& indexBufferOffset, VkDeviceMemory& bufferMemory)
+    {
+        VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+        VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+        VkDeviceSize bufferSize = vertexBufferSize + indexBufferSize;
+        indexBufferOffset = alignIndexBufferOffset(vertexBufferSize, physicalDevice);
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(device,
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            stagingBuffer, 
+            stagingBufferMemory);
+
+        // Staging Bufferにデータをコピーする
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t)vertexBufferSize);
+        memcpy((char*)data + indexBufferOffset, indices.data(), (size_t)indexBufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        // GPUのVertex Bufferにデータをコピーする
+        VkBuffer vertexAndIndexBuffer;
+        createBuffer(device,
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexAndIndexBuffer,
+            bufferMemory);
+        copyBuffer(stagingBuffer, vertexAndIndexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+        return vertexAndIndexBuffer;
+    }
+
+    // より適切なアライメントを取る例
+    VkDeviceSize alignIndexBufferOffset(VkDeviceSize offset, VkPhysicalDevice physicalDevice)
+    {
+        // デバイスの制約を取得
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+
+        // minUniformBufferOffsetAlignment などの値を使用してアライメント
+        VkDeviceSize alignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
+
+        // オフセットを適切なアライメント境界に合わせる
+        return (offset + alignment - 1) & ~(alignment - 1);
     }
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
