@@ -749,12 +749,12 @@ private:
 
         cleanupSwapChain(swapChainImageViews, swapChain, swapChainFramebuffers, logicalDevice);
 
-        swapChain = createSwapChain(physicalDevice, surface, swapChainImages);
-        swapChainImageViews = createImageViews(swapChainImages);
-        swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
+        this->swapChain = createSwapChain(physicalDevice, surface, swapChainImages);
+        this->swapChainImageViews = createImageViews(swapChainImages);
+        this->swapChainFramebuffers = createSwapChainFramebuffers(renderPass, this->swapChainImageViews, swapChainExtent);
     }
 
-    void cleanupSwapChain(std::vector<VkImageView> swapChainImageViews, VkSwapchainKHR swapChain, std::vector<VkFramebuffer> swapChainFramebuffers, VkDevice logicalDevice)
+    void cleanupSwapChain(std::vector<VkImageView> swapChainImageViews, VkSwapchainKHR swapChain, std::vector<VkFramebuffer> swapChainFramebuffers, const VkDevice logicalDevice)
     {
         for (auto framebuffer : swapChainFramebuffers) {
             vkDestroyFramebuffer(logicalDevice, framebuffer, nullptr);
