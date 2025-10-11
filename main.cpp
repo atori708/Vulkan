@@ -735,8 +735,16 @@ private:
         return swapChainImageViews;
     }
 
-    void recreateSwapChain(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, std::vector<VkImage> swapChainImages, std::vector<VkImageView> swapChainImageViews, VkRenderPass renderPass, VkExtent2D swapChainExtent)
+    void recreateSwapChain(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, std::vector<VkImage> swapChainImages, const std::vector<VkImageView> swapChainImageViews, const VkRenderPass renderPass, const VkExtent2D swapChainExtent)
     {
+        // �E�B���h�E���ŏ������ꂽ�Ƃ��ɕ��ƍ�����0�ɂȂ�̂ŁA���̏ꍇ�̓��T�C�Y�����܂őҋ@����
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(window, &width, &height);
+        while (width == 0 || height == 0) {
+            glfwGetFramebufferSize(window, &width, &height);
+            glfwWaitEvents();
+        }
+
         vkDeviceWaitIdle(logicalDevice);
 
         cleanupSwapChain(swapChainImageViews, swapChain, swapChainFramebuffers, logicalDevice);
