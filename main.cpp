@@ -1,4 +1,4 @@
-#include <vulkan/vulkan.h>
+ï»¿#include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -102,25 +102,24 @@ private:
         vkGetDeviceQueue(logicalDevice, graphicsQueueFamilyIndicies.graphicsFamily.value(), 0, &graphicsQueue);
         vkGetDeviceQueue(logicalDevice, graphicsQueueFamilyIndicies.presentFamily.value(), 0, &presentQueue);
 
-        // SwapChain‚Ìì¬
+        // SwapChainã®ä½œæˆ
         swapChain = createSwapChain(physicalDevice, surface, swapChainImages);
         swapChainImageViews = createImageViews(swapChainImages);
 
-        // ƒpƒCƒvƒ‰ƒCƒ“‚Ìì¬
+        // RenderPassã€GraphicsPipelineã€FrameBufferã®ä½œæˆ
         renderPass = createRenderPass(swapChainImageFormat);
         vertShaderModule = createShaderModule("shaders/vert.spv");
         fragShaderModule = createShaderModule("shaders/frag.spv");
         graphicsPipeline = createGraphicsPipeline(renderPass, vertShaderModule, fragShaderModule);
         swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
 
-        // ƒRƒ}ƒ“ƒhƒv[ƒ‹‚ÆƒRƒ}ƒ“ƒhƒoƒbƒtƒ@‚Ìì¬
+        // CommandPoolã€CommandBufferã®ä½œæˆ
         commandPool = createCommandPool(graphicsQueueFamilyIndicies);
         commandBuffers = createCommandBuffers(commandPool);
 
-        // “¯ŠúƒIƒuƒWƒFƒNƒg‚Ìì¬
+        // åŒæœŸã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ä½œæˆ
         createSyncObjects();
     }
-
 
     void mainLoop()
     {
@@ -129,7 +128,6 @@ private:
             drawFrame(currentFrame);
             currentFrame++;
         }
-
 
         vkDeviceWaitIdle(logicalDevice);
     }
@@ -226,7 +224,7 @@ private:
     }
 
     /// <summary>
-    /// VkInstance‚ğì¬‚·‚é
+    /// VkInstanceã‚’ä½œæˆã™ã‚‹
     /// </summary>
     /// <returns></returns>
     VkInstance createInstance() {
@@ -341,6 +339,16 @@ private:
         createInfo.pfnUserCallback = debugCallback;
     }
 
+    VkResult CreateDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsObjectNameInfoEXT* pNameInfo) {
+        auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT");
+        if (func != nullptr) {
+            return func(device, pNameInfo);
+        }
+        else {
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        }
+    }
+
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
         auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
         if (func != nullptr) {
@@ -369,9 +377,9 @@ private:
     }
 #pragma endregion
 
-#pragma region •¨—ƒfƒoƒCƒX‚Ìì¬
+#pragma region ç‰©ç†ãƒ‡ãƒã‚¤ã‚¹ã®ä½œæˆ
     /// <summary>
-    /// •¨—ƒfƒoƒCƒX‚ğ‘I‘ğ‚·‚é
+    /// æç”»ã«å¯¾å¿œã—ã¦ã„ã‚‹ç‰©ç†ãƒ‡ãƒã‚¤ã‚¹ã‚’é¸æŠã™ã‚‹
     /// </summary>
     /// <param name="vkInstance"></param>
     /// <returns></returns>
@@ -457,10 +465,8 @@ private:
     }
 
     /// <summary>
-    /// •K—v‚ÈŠg’£‚ğƒTƒ|[ƒg‚µ‚Ä‚¢‚é‚©‚ğŠm”F‚·‚é
+    /// ãƒ‡ãƒã‚¤ã‚¹ãŒå¿…è¦ãªæ‹¡å¼µæ©Ÿèƒ½ã‚’ã‚µãƒãƒ¼ãƒˆã—ã¦ã„ã‚‹ã‹ç¢ºèªã™ã‚‹
     /// </summary>
-    /// <param name="device"></param>
-    /// <returns></returns>
     bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
         uint32_t extensionCount;
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -483,12 +489,12 @@ private:
 
         int i = 0;
         for (const auto& queueFamily : queueFamilies) {
-            // ƒOƒ‰ƒtƒBƒNƒX‚ğƒTƒ|[ƒg‚µ‚Ä‚¢‚é‚©
+            // ã‚°ãƒ©ãƒ•ã‚£ã‚¯ã‚¹ã‚­ãƒ¥ãƒ¼ã‚’æ¢ã™
             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
             }
             
-            // ƒvƒŒƒ[ƒ“ƒe[ƒVƒ‡ƒ“‚ğƒTƒ|[ƒg‚µ‚Ä‚¢‚é‚©
+            // Presentã‚­ãƒ¥ãƒ¼ã‚’æ¢ã™
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
             if (presentSupport) {
@@ -528,9 +534,9 @@ private:
     }
 #pragma endregion
 
-#pragma region ˜_—ƒfƒoƒCƒX‚Ìì¬
+#pragma region è«–ç†ãƒ‡ãƒã‚¤ã‚¹ã®ä½œæˆ
     /// <summary>
-    /// ˜_—ƒfƒoƒCƒX‚ğì¬‚·‚é
+    /// è«–ç†ãƒ‡ãƒã‚¤ã‚¹ã‚’ä½œæˆã™ã‚‹
     /// </summary>
     VkDevice createLogicalDevice(VkPhysicalDevice physicalDevice, QueueFamilyIndices queueFamilyIndices)
     {
@@ -557,8 +563,7 @@ private:
         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
         if(enableValidationLayers) {
-            // ŒÃ‚¢À‘•‚¾‚ªŒİŠ·«‚Ì‚½‚ß‚É“ü‚ê‚Ä‚¨‚­
-            // ˜_—ƒfƒoƒCƒX‚ÌŒŸØƒŒƒCƒ„[‚ÆƒCƒ“ƒXƒ^ƒ“ƒX‚ÌŒŸØƒŒƒCƒ„[‚Í•ÊX‚¾‚Á‚½‚ç‚µ‚¢
+            // äº’æ›æ€§ã®ãŸã‚ã«æ®‹ã—ã¦ãŠã
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
             createInfo.ppEnabledLayerNames = validationLayers.data();
         }
@@ -576,7 +581,7 @@ private:
 #pragma endregion
 
     /// <summary>
-    /// ƒT[ƒtƒFƒX‚ğì¬‚·‚é
+    /// ã‚µãƒ¼ãƒ•ã‚§ã‚¹ã‚’ä½œæˆã™ã‚‹
     /// </summary>
     void createSurface()
     {
@@ -585,9 +590,9 @@ private:
         }
     }
 
-#pragma region ƒXƒƒbƒvƒ`ƒFƒCƒ“
+#pragma region SwapChain
     /// <summary>
-    /// SwapChain‚ğì¬‚·‚é
+    /// SwapChainã‚’ä½œæˆã™ã‚‹
     /// </summary>
     VkSwapchainKHR createSwapChain(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, std::vector<VkImage>& swapChainImages) {
         auto swapChainSupport = querySwapChainSupport(physicalDevice, surface);
@@ -698,7 +703,7 @@ private:
     }
 
     /// <summary>
-    /// ƒXƒƒbƒvƒ`ƒFƒCƒ“‚ÌƒCƒ[ƒWƒrƒ…[‚ğì¬‚·‚é
+    /// SwapChainã®ImageViewã‚’ä½œæˆã™ã‚‹
     /// </summary>
     std::vector<VkImageView> createImageViews(std::vector<VkImage> swapChainImages)
     {
@@ -724,13 +729,12 @@ private:
                 throw std::runtime_error("failed to create image views!");
             }
 
-            // –¼‘O‚Â‚¯‚æ‚¤‚Æ‚µ‚½‚¯‚ÇƒŠƒ“ƒNƒGƒ‰[‚ªo‚é
-            //VkDebugMarkerObjectNameInfoEXT nameInfo{};
-            //nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT;
-            //nameInfo.objectType = VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT;
-            //nameInfo.object = (uint64_t)swapChainImageViews[i];
-            //nameInfo.pObjectName = "SwapChainImageView " + i;
-            //vkDebugMarkerSetObjectNameEXT(logicalDevice, &nameInfo);
+            VkDebugUtilsObjectNameInfoEXT nameInfo{};
+            nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT;
+            nameInfo.objectType = VK_OBJECT_TYPE_IMAGE_VIEW;
+            nameInfo.objectHandle = (uint64_t)swapChainImageViews[i];
+            nameInfo.pObjectName = "SwapChainImageView " + i;
+            CreateDebugUtilsObjectNameEXT(logicalDevice, &nameInfo);
         }
 
         return swapChainImageViews;
@@ -768,13 +772,13 @@ private:
 #pragma endregion
 
     /// <summary>
-    /// RenderPass‚ğì¬‚·‚é
+    /// RenderPassä½œæˆ
     /// </summary>
     /// <param name="swapChainImageFormat"></param>
     /// <returns></returns>
     VkRenderPass createRenderPass(VkFormat swapChainImageFormat)
     {
-        // ƒAƒ^ƒbƒ`ƒƒ“ƒg‚Ìİ’è
+        // Color Attachment
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = swapChainImageFormat;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -789,13 +793,13 @@ private:
         colorAttachmentRef.attachment = 0;
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        // ƒTƒuƒpƒX‚Ìİ’è
+        // SubPass
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.pColorAttachments = &colorAttachmentRef;
         subpass.colorAttachmentCount = 1;
 
-        // ƒTƒuƒpƒXŠÔ‚ÌˆË‘¶ŠÖŒW‚Ìİ’è(¡‰ñ‚Í1‚Â‚µ‚©ƒTƒuƒpƒX‚ª‚È‚¢‚Ì‚ÅÈ—ª‚µ‚Ä‚à‚æ‚¢)
+        // Dependency
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
@@ -821,11 +825,10 @@ private:
         return renderPass;
     }
 
-#pragma region ƒOƒ‰ƒtƒBƒNƒXƒpƒCƒvƒ‰ƒCƒ“‚Ìì¬
+#pragma region ã‚°ãƒ©ãƒ•ã‚£ã‚¯ã‚¹ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã®ä½œæˆ
     VkPipeline createGraphicsPipeline(VkRenderPass renderPass, VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
     {
-
-        // ƒVƒF[ƒ_ƒXƒe[ƒW‚Ìì¬
+        // ã‚·ã‚§ãƒ¼ãƒ€ã®æº–å‚™
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
         vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -839,8 +842,8 @@ private:
         VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
         // Dynamic State
-        // PSO‚ÍŠî–{“I‚É•s•Ï‚¾‚ªAˆê•”‚Í“®“I‚É•ÏX‚Å‚«‚é‚Ì‚Å‚»‚Ìİ’è
-        // ‚±‚ê‚ğ‚·‚é‚±‚Æ‚ÅA•`‰æ‚Éƒf[ƒ^‚ğw’è‚Å‚«‚é‚æ‚¤‚É‚È‚é(w’è‚ª•K{‚É‚È‚é)
+        // PSOã®ä¸€éƒ¨çŠ¶æ…‹ã‚’å‹•çš„ã«å¤‰æ›´ã§ãã‚‹æ©Ÿèƒ½
+        // é€†ã«ã“ã®é …ç›®ã¯å¸¸ã«è¨­å®š
         std::vector<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR,
@@ -850,7 +853,7 @@ private:
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
-        // ’¸“_“ü—Í
+        // Vertex Input
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 0;
@@ -858,13 +861,13 @@ private:
         vertexInputInfo.vertexAttributeDescriptionCount = 0;
         vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
 
-        // “ü—ÍƒAƒZƒ“ƒuƒŠ
+        // Input Assembly
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        inputAssembly.primitiveRestartEnable = VK_FALSE; // VK_TRUE‚É‚·‚é‚ÆAtopology‚ğSTRIP‚É‚µ‚½‚Æ‚«‚ÌLINE‚Æƒ|ƒŠƒSƒ“‚ğ“Áê‚ÈƒCƒ“ƒfƒbƒNƒX’l‚ÅƒvƒŠƒ~ƒeƒBƒu‚ğ•ªŠ„‚Å‚«‚é...H‚ç‚µ‚¢
+        inputAssembly.primitiveRestartEnable = VK_FALSE; // VK_TRUEï¿½É‚ï¿½ï¿½ï¿½ÆAtopologyï¿½ï¿½STRIPï¿½É‚ï¿½ï¿½ï¿½ï¿½Æ‚ï¿½ï¿½ï¿½LINEï¿½Æƒ|ï¿½ï¿½ï¿½Sï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÈƒCï¿½ï¿½ï¿½fï¿½bï¿½Nï¿½Xï¿½lï¿½Åƒvï¿½ï¿½ï¿½~ï¿½eï¿½Bï¿½uï¿½ğ•ªŠï¿½ï¿½Å‚ï¿½ï¿½ï¿½...ï¿½Hï¿½ç‚µï¿½ï¿½
 
-        // ƒrƒ…[ƒ|[ƒg‚ÆƒVƒU[
+        // Viewport and Scissor
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
@@ -872,7 +875,6 @@ private:
         viewport.height = (float) swapChainExtent.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
-
         VkRect2D scissor{};
         scissor.offset = { 0, 0 };
         scissor.extent = swapChainExtent;
@@ -884,12 +886,12 @@ private:
         viewportState.scissorCount = 1;
         viewportState.pScissors = &scissor;
 
-        // ƒ‰ƒXƒ^ƒ‰ƒCƒU
+        // Rasterizer
         VkPipelineRasterizationStateCreateInfo rasterizerCreateInfo{};
         rasterizerCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterizerCreateInfo.depthClampEnable = VK_FALSE; // VK_TRUE‚É‚·‚é‚ÆAƒNƒŠƒbƒv‹óŠÔ‚ÌŠO‚Éo‚½[“x‚ğƒNƒ‰ƒ“ƒv‚·‚é(”jŠü‚Í‚µ‚È‚¢)BƒVƒƒƒhƒEƒ}ƒbƒv‚È‚Ç‚ÌƒP[ƒX‚Å–ğ‚É—§‚Â‚ç‚µ‚¢
-        rasterizerCreateInfo.rasterizerDiscardEnable = VK_FALSE; // VK_TRUE‚É‚·‚é‚ÆAƒtƒ‰ƒOƒƒ“ƒgƒVƒF[ƒ_‚Ü‚Ås‚©‚¸‚ÉƒvƒŠƒ~ƒeƒBƒu‚ğ”jŠü‚·‚éB’¸“_ˆ—‚¾‚¯‚µ‚½‚¢ê‡‚È‚Ç‚Ég‚¤
-        rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL; // ƒ|ƒŠƒSƒ“‚Ì•`‰æƒ‚[ƒhBLINE‚âPOINT‚à‚ ‚é
+        rasterizerCreateInfo.depthClampEnable = VK_FALSE; // VK_TRUEï¿½É‚ï¿½ï¿½ï¿½ÆAï¿½Nï¿½ï¿½ï¿½bï¿½vï¿½ï¿½Ô‚ÌŠOï¿½Éoï¿½ï¿½ï¿½[ï¿½xï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½ï¿½ï¿½vï¿½ï¿½ï¿½ï¿½(ï¿½jï¿½ï¿½ï¿½Í‚ï¿½ï¿½È‚ï¿½)ï¿½Bï¿½Vï¿½ï¿½ï¿½hï¿½Eï¿½}ï¿½bï¿½vï¿½È‚Ç‚ÌƒPï¿½[ï¿½Xï¿½Å–ï¿½ï¿½É—ï¿½ï¿½Â‚ç‚µï¿½ï¿½
+        rasterizerCreateInfo.rasterizerDiscardEnable = VK_FALSE; // VK_TRUEï¿½É‚ï¿½ï¿½ï¿½ÆAï¿½tï¿½ï¿½ï¿½Oï¿½ï¿½ï¿½ï¿½ï¿½gï¿½Vï¿½Fï¿½[ï¿½_ï¿½Ü‚Åsï¿½ï¿½ï¿½ï¿½ï¿½Éƒvï¿½ï¿½ï¿½~ï¿½eï¿½Bï¿½uï¿½ï¿½jï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Bï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ê‡ï¿½È‚Ç‚Égï¿½ï¿½
+        rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL; // ï¿½|ï¿½ï¿½ï¿½Sï¿½ï¿½ï¿½Ì•`ï¿½æƒ‚ï¿½[ï¿½hï¿½BLINEï¿½ï¿½POINTï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         rasterizerCreateInfo.lineWidth = 1.0f;
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizerCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
@@ -898,7 +900,7 @@ private:
         rasterizerCreateInfo.depthBiasClamp = 0.0f; // Optional
         rasterizerCreateInfo.depthBiasSlopeFactor = 0.0f; // Optional
 
-        // ƒ}ƒ‹ƒ`ƒTƒ“ƒvƒŠƒ“ƒO
+        // MSAA
         VkPipelineMultisampleStateCreateInfo multisamplingCreateInfo{};
         multisamplingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisamplingCreateInfo.sampleShadingEnable = VK_FALSE;
@@ -908,9 +910,7 @@ private:
         multisamplingCreateInfo.alphaToCoverageEnable = VK_FALSE; // Optional
         multisamplingCreateInfo.alphaToOneEnable = VK_FALSE; // Optional
 
-        // [“xƒXƒeƒ“ƒVƒ‹‚Ìİ’è‚à‚ ‚é‚¯‚Ç¡‚Í‚¢‚ç‚È‚¢‚Ì‚ÅÈ—ª
-
-        // ƒJƒ‰[ƒuƒŒƒ“ƒh
+        // BlendState
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
         colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachment.blendEnable = VK_FALSE;
@@ -925,7 +925,7 @@ private:
         colorBlendStateInfo.blendConstants[2] = 0.0f; // Optional
         colorBlendStateInfo.blendConstants[3] = 0.0f; // Optional
 
-        // ƒpƒCƒvƒ‰ƒCƒ“ƒŒƒCƒAƒEƒg
+        // Pipeline Layout
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 0; // Optional
@@ -937,7 +937,7 @@ private:
             throw std::runtime_error("failed to create pipeline layout!");
         }
 
-        // ƒpƒCƒvƒ‰ƒCƒ“‚Ìì¬
+        // ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚’ä½œæˆ
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.stageCount = 2;
@@ -988,7 +988,7 @@ private:
         return swapChainFramebuffers;
     }
 
-#pragma region ƒRƒ}ƒ“ƒhƒv[ƒ‹‚ÆƒRƒ}ƒ“ƒhƒoƒbƒtƒ@
+#pragma region ã‚³ãƒãƒ³ãƒ‰ãƒãƒƒãƒ•ã‚¡
     VkCommandPool createCommandPool(const QueueFamilyIndices queueFamilyIndices)
     {
         VkCommandPoolCreateInfo poolInfo{};
@@ -1065,7 +1065,7 @@ private:
     }
 #pragma endregion
     
-#pragma region ƒVƒF[ƒ_
+#pragma region ã‚·ã‚§ãƒ¼ãƒ€
     VkShaderModule createShaderModule(const std::string& filename) {
         auto code = readFile(filename);
         return createShaderModuleFromBinary(code);
@@ -1117,7 +1117,7 @@ private:
     }
 
     /// <summary>
-    /// ƒtƒ@ƒCƒ‹‚ğƒoƒCƒiƒŠŒ`®‚Åƒ[ƒh‚µ‚Ü‚·
+    /// ãƒ•ã‚¡ã‚¤ãƒ«ã‚’èª­ã¿è¾¼ã‚€
     /// </summary>
     std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
