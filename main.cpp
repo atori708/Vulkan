@@ -101,6 +101,7 @@ private:
     VkPipeline graphicsPipeline;
 
     VkCommandPool commandPool;
+    VkCommandPool tempCommandPool;
     std::vector<VkCommandBuffer> commandBuffers;
 
     VkBuffer vertexBuffer;
@@ -152,38 +153,102 @@ private:
         swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
 
         // CommandPool、CommandBufferの作成
-        commandPool = createCommandPool(graphicsQueueFamilyIndicies);
+        commandPool = createCommandPool(graphicsQueueFamilyIndicies, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+        tempCommandPool = createCommandPool(graphicsQueueFamilyIndicies, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
         commandBuffers = createCommandBuffers(commandPool);
 
         // 同期オブジェクトの作成
         createSyncObjects();
 
         // 頂点バッファの作成
-        vertexBuffer = createVertexBuffer();
-        vertexBufferMemory = createVertexBufferMemoery(vertexBuffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        vkBindBufferMemory(logicalDevice, vertexBuffer, vertexBufferMemory, 0);
-
-        // 頂点データのコピー
-        void* data;
-        auto vertexBufferSize = sizeof(vertices[0]) * vertices.size();
-        vkMapMemory(logicalDevice, vertexBufferMemory, 0, vertexBufferSize, 0, &data);
-        memcpy(data, vertices.data(), vertexBufferSize);
-        vkUnmapMemory(logicalDevice, vertexBufferMemory);
+        vertexBuffer = createVertexBuffer(logicalDevice, vertices, vertexBufferMemory);
     }
 
-    VkDeviceMemory createVertexBufferMemoery(VkBuffer buffer, VkMemoryPropertyFlags properties)
+    VkBuffer createVertexBuffer(const VkDevice device, const std::vector<Vertex> vertices, VkDeviceMemory& bufferMemory)
     {
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(device, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        // Staging Bufferにデータをコピーする
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        // GPUのVertex Bufferにデータをコピーする
+        VkBuffer vertexBuffer;
+        createBuffer(device, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, bufferMemory);
+        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+        return vertexBuffer;
+    }
+
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) 
+    {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = tempCommandPool;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(logicalDevice, &allocInfo, &commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin command buffer!");
+        }
+
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue); // フェンスを使ったほうがより効率が良い
+
+        vkFreeCommandBuffers(logicalDevice, tempCommandPool, 1, &commandBuffer);
+    }
+
+    void createBuffer(const VkDevice device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create buffer!");
+        }
+
         VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(logicalDevice, buffer, &memRequirements);
+        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-        VkDeviceMemory bufferMemory;
-        if (vkAllocateMemory(logicalDevice, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate vertex buffer memory!");
+
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate buffer memory!");
         }
-        return bufferMemory;
+
+        vkBindBufferMemory(device, buffer, bufferMemory, 0);
     }
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
@@ -196,22 +261,6 @@ private:
             }
         }
         throw std::runtime_error("failed to find suitable memory type!");
-    }
-
-    VkBuffer createVertexBuffer()
-    {
-        VkBuffer vertexBuffer;
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = sizeof(vertices[0]) * vertices.size();
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // 1つのキューでのみ使用する場合
-
-        if (vkCreateBuffer(logicalDevice, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create vertex buffer!");
-        }
-
-        return vertexBuffer;
     }
 
     void mainLoop()
@@ -302,6 +351,7 @@ private:
         destroySyncObjects();
 
         vkDestroyCommandPool(logicalDevice, commandPool, nullptr);
+        vkDestroyCommandPool(logicalDevice, tempCommandPool, nullptr);
 
         cleanupSwapChain(swapChainImageViews, swapChain, swapChainFramebuffers, logicalDevice);
 
@@ -1087,11 +1137,11 @@ private:
     }
 
 #pragma region コマンドバッファ
-    VkCommandPool createCommandPool(const QueueFamilyIndices queueFamilyIndices)
+    VkCommandPool createCommandPool(const QueueFamilyIndices queueFamilyIndices, const VkCommandPoolCreateFlagBits flags)
     {
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        poolInfo.flags = flags;
         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
         VkCommandPool commandPool;
