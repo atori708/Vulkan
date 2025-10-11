@@ -737,7 +737,7 @@ private:
 
     void recreateSwapChain(const VkPhysicalDevice physicalDevice, const VkSurfaceKHR surface, std::vector<VkImage> swapChainImages, const std::vector<VkImageView> swapChainImageViews, const VkRenderPass renderPass, const VkExtent2D swapChainExtent)
     {
-        // �E�B���h�E���ŏ������ꂽ�Ƃ��ɕ��ƍ�����0�ɂȂ�̂ŁA���̏ꍇ�̓��T�C�Y�����܂őҋ@����
+        // ウィンドウが最小化されたときに幅と高さが0になるので、その場合はリサイズされるまで待機する
         int width = 0, height = 0;
         glfwGetFramebufferSize(window, &width, &height);
         while (width == 0 || height == 0) {
