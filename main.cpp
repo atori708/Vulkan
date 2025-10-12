@@ -91,6 +91,8 @@ private:
 #endif
 
     GLFWwindow* window;
+    bool frameBufferResized = false;
+
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
     VkSurfaceKHR surface;
@@ -365,8 +367,6 @@ private:
             throw std::runtime_error("failed to record command buffer!");
         }
     }
-
-    bool frameBufferResized = false;
 
     void cleanup() {
         if (enableValidationLayers) {
