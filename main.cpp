@@ -1,7 +1,9 @@
 ﻿#include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
+#define GLM_FORCE_RADIANS
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -12,6 +14,13 @@
 #include <optional>
 #include <set>
 #include <array>
+#include <chrono>
+
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
 
 struct Vertex {
     glm::vec2 pos;
@@ -102,6 +111,7 @@ private:
     VkShaderModule fragShaderModule;
 
     VkRenderPass renderPass;
+    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
 
@@ -112,6 +122,13 @@ private:
     VkBuffer vertexAndIndexBuffer;
     VkDeviceMemory vertexAndIndexBufferMemory;
     VkDeviceSize indexBufferOffset;
+
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemory;
+    std::vector<void*> uniformBuffersMapped;
+
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
@@ -155,7 +172,9 @@ private:
         renderPass = createRenderPass(swapChainImageFormat);
         vertShaderModule = createShaderModule("shaders/vert.spv");
         fragShaderModule = createShaderModule("shaders/frag.spv");
-        graphicsPipeline = createGraphicsPipeline(renderPass, vertShaderModule, fragShaderModule);
+        descriptorSetLayout = createDescriptorSetLayout(logicalDevice);
+
+        graphicsPipeline = createGraphicsPipeline(renderPass, descriptorSetLayout, vertShaderModule, fragShaderModule);
         swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
 
         // CommandPool、CommandBufferの作成
@@ -166,8 +185,15 @@ private:
         // 同期オブジェクトの作成
         createSyncObjects();
 
-        // 頂点バッファとインデックスバッファの作成
+        // バッファの作成
         vertexAndIndexBuffer = createVertexAndIndexBuffer(logicalDevice, vertices, indices, indexBufferOffset, vertexAndIndexBufferMemory);
+        uniformBuffers = createUniformBuffers(logicalDevice, sizeof(UniformBufferObject), MAX_FRAMES_IN_FLIGHT, uniformBuffersMemory, uniformBuffersMapped);
+
+        descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT);
+        descriptorSets = createDescriptorSets(logicalDevice, descriptorPool, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
+
+        updateUniformDescriptorSets(uniformBuffers, descriptorSets);
+
     }
 
     void mainLoop()
@@ -183,12 +209,15 @@ private:
 
     void drawFrame(uint32_t currentFrame)
     {
-        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-        vkWaitForFences(logicalDevice, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+        uint32_t frameIndex = currentFrame % MAX_FRAMES_IN_FLIGHT;
+        vkWaitForFences(logicalDevice, 1, &inFlightFences[frameIndex], VK_TRUE, UINT64_MAX);
 
+        // Uniform Bufferの更新
+        updateUniformBuffers(uniformBuffersMapped, frameIndex);
+
+        // SwapChainが古くなっている場合は再作成する
         uint32_t imageIndex;
-        auto result = vkAcquireNextImageKHR(logicalDevice, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
-
+        auto result = vkAcquireNextImageKHR(logicalDevice, swapChain, UINT64_MAX, imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
         {
             recreateSwapChain(physicalDevice, surface, swapChainImages, swapChainImageViews, renderPass, swapChainExtent);
@@ -198,28 +227,27 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
-        vkResetFences(logicalDevice, 1, &inFlightFences[currentFrame]);
+        vkResetFences(logicalDevice, 1, &inFlightFences[frameIndex]);
 
-
-        vkResetCommandBuffer(commandBuffers[currentFrame], 0);
-        recordCommandBuffer(commandBuffers[currentFrame], renderPass, imageIndex, swapChainExtent);
+        vkResetCommandBuffer(commandBuffers[frameIndex], 0);
+        recordCommandBuffer(frameIndex, commandBuffers[frameIndex], renderPass, imageIndex, swapChainExtent);
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+        VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[frameIndex] };
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
+        submitInfo.pCommandBuffers = &commandBuffers[frameIndex];
 
-        VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+        VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[frameIndex] };
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[frameIndex]) != VK_SUCCESS) {
             throw std::runtime_error("failed to submit draw command buffer!");
         }
 
@@ -245,11 +273,112 @@ private:
         }
     }
 
+    void updateUniformBuffers(const std::vector<void*> uniformBufferMapped, const uint32_t frameIndex)
+    {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+        UniformBufferObject ubo{};
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+        ubo.proj[1][1] *= -1; // GLMはY座標が反転しているので、Vulkanに合わせて反転する
+        memcpy(uniformBufferMapped[frameIndex], &ubo, sizeof(ubo));
+    }
+
+    void updateUniformDescriptorSets(const std::vector<VkBuffer> uniformBuffers, const std::vector<VkDescriptorSet> uniformDescriptorSets)
+    {
+        size_t bufferCount = uniformBuffers.size();
+        for(size_t i = 0; i < bufferCount; i++)
+        {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject); // バッファ全体を使う場合はVK_WHOLE_SIZEを指定できる
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = uniformDescriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+            descriptorWrite.pImageInfo = nullptr; // Optional
+            descriptorWrite.pTexelBufferView = nullptr; // Optional
+            vkUpdateDescriptorSets(logicalDevice, 1, &descriptorWrite, 0, nullptr);
+        }
+    }
+
+    void recordCommandBuffer(uint32_t frameIndex, VkCommandBuffer commandBuffer, VkRenderPass renderPass, uint32_t swapChainBufferIndex, VkExtent2D swapChainExtent)
+    {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0; // Optional
+        beginInfo.pInheritanceInfo = nullptr; // Optional
+
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = swapChainFramebuffers[swapChainBufferIndex];
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = swapChainExtent;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float)swapChainExtent.width;
+        viewport.height = (float)swapChainExtent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = { 0, 0 };
+        scissor.extent = swapChainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[frameIndex], 0, nullptr);
+
+        VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, vertexAndIndexBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT16);
+
+        //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+        vkCmdEndRenderPass(commandBuffer);
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+    }
+
     bool frameBufferResized = false;
 
     void cleanup() {
         if (enableValidationLayers) {
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+        }
+
+        vkDestroyDescriptorSetLayout(logicalDevice, descriptorSetLayout, nullptr);
+        vkDestroyDescriptorPool(logicalDevice, descriptorPool, nullptr); // DescriptorSetsはDescriptorPoolと一緒に破棄されるので個別に破棄する必要はない
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            vkDestroyBuffer(logicalDevice, uniformBuffers[i], nullptr);
+            vkFreeMemory(logicalDevice, uniformBuffersMemory[i], nullptr);
         }
 
         vkDestroyBuffer(logicalDevice, vertexAndIndexBuffer, nullptr);
@@ -879,7 +1008,7 @@ private:
     }
 
 #pragma region グラフィクスパイプラインの作成
-    VkPipeline createGraphicsPipeline(VkRenderPass renderPass, VkShaderModule vertShaderModule, VkShaderModule fragShaderModule)
+    VkPipeline createGraphicsPipeline(const VkRenderPass renderPass, const VkDescriptorSetLayout descriptorSetLayout, const VkShaderModule vertShaderModule, const VkShaderModule fragShaderModule)
     {
         // シェーダの準備
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
@@ -949,7 +1078,7 @@ private:
         rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL; // �|���S���̕`�惂�[�h�BLINE��POINT������
         rasterizerCreateInfo.lineWidth = 1.0f;
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizerCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizerCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizerCreateInfo.depthBiasEnable = VK_FALSE;
         rasterizerCreateInfo.depthBiasConstantFactor = 0.0f; // Optional
         rasterizerCreateInfo.depthBiasClamp = 0.0f; // Optional
@@ -983,8 +1112,8 @@ private:
         // Pipeline Layout
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 0; // Optional
-        pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
+        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout; 
         pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
         pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
@@ -1043,7 +1172,7 @@ private:
         return swapChainFramebuffers;
     }
 
-#pragma region コマンドバッファ
+#pragma region コマンドバッファ作成
     VkCommandPool createCommandPool(const QueueFamilyIndices queueFamilyIndices, const VkCommandPoolCreateFlagBits flags)
     {
         VkCommandPoolCreateInfo poolInfo{};
@@ -1074,58 +1203,7 @@ private:
         return commandBuffers;
     }
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkRenderPass renderPass, uint32_t swapChainBufferIndex, VkExtent2D swapChainExtent)
-    {
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = 0; // Optional
-        beginInfo.pInheritanceInfo = nullptr; // Optional
-
-        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-            throw std::runtime_error("failed to begin recording command buffer!");
-        }
-
-        VkRenderPassBeginInfo renderPassInfo{};
-        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = renderPass; 
-        renderPassInfo.framebuffer = swapChainFramebuffers[swapChainBufferIndex];
-        renderPassInfo.renderArea.offset = { 0, 0 };
-        renderPassInfo.renderArea.extent = swapChainExtent;
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
-
-        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float)swapChainExtent.width;
-        viewport.height = (float)swapChainExtent.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-        VkRect2D scissor{};
-        scissor.offset = { 0, 0 };
-        scissor.extent = swapChainExtent;
-        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
-        VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffer, vertexAndIndexBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT16);
-
-        //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-        vkCmdEndRenderPass(commandBuffer);
-        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-            throw std::runtime_error("failed to record command buffer!");
-        }
-    }
+  
 #pragma endregion
     
 #pragma region シェーダ
@@ -1175,6 +1253,9 @@ private:
         return vertexAndIndexBuffer;
     }
 
+    /// <summary>
+    /// インデックスバッファを作成する
+    /// </summary>
     VkBuffer createIndexBuffer(const VkDevice device, const std::vector<uint16_t> indices, VkDeviceMemory& bufferMemory)
     {
         VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
@@ -1199,6 +1280,9 @@ private:
         return vertexAndIndexBuffer;
     }
 
+    /// <summary>
+    /// 頂点バッファとインデックスバッファをまとめて作成する
+    /// </summary>
     VkBuffer createVertexAndIndexBuffer(const VkDevice device, const std::vector<Vertex> vertices, const std::vector<uint16_t> indices, VkDeviceSize& indexBufferOffset, VkDeviceMemory& bufferMemory)
     {
         VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
@@ -1235,6 +1319,26 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
 
         return vertexAndIndexBuffer;
+    }
+
+    std::vector<VkBuffer> createUniformBuffers(const VkDevice device, const VkDeviceSize bufferSize, const size_t bufferCount, std::vector<VkDeviceMemory>& uniformBufferMemories, std::vector<void*>& bufferMapped)
+    {
+        std::vector<VkBuffer> uniformBuffers(bufferCount);
+        uniformBufferMemories.resize(bufferCount);
+        bufferMapped.resize(bufferCount);
+
+        for (size_t i = 0; i < bufferCount; i++) {
+            createBuffer(device,
+                bufferSize,
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                uniformBuffers[i],
+                uniformBufferMemories[i]);
+
+            vkMapMemory(device, uniformBufferMemories[i], 0, bufferSize, 0, &bufferMapped[i]);
+        }
+
+        return uniformBuffers;
     }
 
     // より適切なアライメントを取る例
@@ -1324,6 +1428,66 @@ private:
             }
         }
         throw std::runtime_error("failed to find suitable memory type!");
+    }
+#pragma endregion
+
+#pragma region ディスクリプタ
+    VkDescriptorSetLayout createDescriptorSetLayout(const VkDevice device)
+    {
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &uboLayoutBinding;
+
+        VkDescriptorSetLayout descriptorSetLayout;
+        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+
+        return descriptorSetLayout;
+    }
+
+    VkDescriptorPool createDescriptorPool(const VkDevice device, const size_t maxSets)
+    {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(maxSets);
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.maxSets = static_cast<uint32_t>(maxSets);
+        VkDescriptorPool descriptorPool;
+        if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor pool!");
+        }
+
+        return descriptorPool;
+    }
+
+    std::vector<VkDescriptorSet> createDescriptorSets(const VkDevice device, const VkDescriptorPool descriptorPool, const VkDescriptorSetLayout descriptorSetLayout, const uint32_t descriptorCount)
+    {
+        std::vector<VkDescriptorSetLayout> layouts(descriptorCount, descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(descriptorCount);
+        allocInfo.pSetLayouts = layouts.data();
+
+        std::vector<VkDescriptorSet> descriptorSets(descriptorCount);
+        if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        return descriptorSets;
     }
 #pragma endregion
 
