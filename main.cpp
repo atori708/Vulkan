@@ -18,6 +18,19 @@
 
 struct UniformBufferObject {
     glm::mat4 model;
+};
+
+struct Camera {
+    glm::vec3 position;
+    glm::vec3 lookat;
+    glm::vec3 up;
+    float fov;
+    float aspect;
+    float nearClip;
+    float farClip;
+};
+
+struct CameraUniformBufferObject {
     glm::mat4 view;
     glm::mat4 proj;
 };
@@ -55,6 +68,13 @@ public :
     void run() {
         initWindow();
         initVulkan();
+        camera.position = glm::vec3(2.0f, 2.0f, 2.0f);
+        camera.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
+        camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+        camera.fov = 45.0f;
+        camera.aspect = swapChainExtent.width / (float)swapChainExtent.height;
+        camera.nearClip = 0.1f;
+        camera.farClip = 10.0f;
         mainLoop();
         cleanup();
     }
@@ -112,8 +132,10 @@ private:
     VkShaderModule vertShaderModule;
     VkShaderModule fragShaderModule;
 
+    VkDescriptorSetLayout cameraDescriptorSetLayout;
+    VkDescriptorSetLayout modelDescriptorSetLayout;
+
     VkRenderPass renderPass;
-    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
 
@@ -130,7 +152,8 @@ private:
     std::vector<void*> uniformBuffersMapped;
 
     VkDescriptorPool descriptorPool;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<VkDescriptorSet> cameraDescriptorSets;
+    std::vector<VkDescriptorSet> modelDescriptorSets;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
@@ -170,14 +193,16 @@ private:
         swapChain = createSwapChain(physicalDevice, surface, swapChainImages);
         swapChainImageViews = createImageViews(swapChainImages);
 
+        modelDescriptorSetLayout = createDescriptorSetLayout(logicalDevice);
+        cameraDescriptorSetLayout = createDescriptorSetLayout(logicalDevice);
+
         // RenderPass、GraphicsPipeline、FrameBufferの作成
         renderPass = createRenderPass(swapChainImageFormat);
+        swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
+
         vertShaderModule = createShaderModule("shaders/vert.spv");
         fragShaderModule = createShaderModule("shaders/frag.spv");
-        descriptorSetLayout = createDescriptorSetLayout(logicalDevice);
-
-        graphicsPipeline = createGraphicsPipeline(renderPass, descriptorSetLayout, vertShaderModule, fragShaderModule);
-        swapChainFramebuffers = createSwapChainFramebuffers(renderPass, swapChainImageViews, swapChainExtent);
+        graphicsPipeline = createGraphicsPipeline(renderPass, modelDescriptorSetLayout, vertShaderModule, fragShaderModule);
 
         // CommandPool、CommandBufferの作成
         commandPool = createCommandPool(graphicsQueueFamilyIndicies, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -189,13 +214,17 @@ private:
 
         // バッファの作成
         vertexAndIndexBuffer = createVertexAndIndexBuffer(logicalDevice, vertices, indices, indexBufferOffset, vertexAndIndexBufferMemory);
-        uniformBuffers = createUniformBuffers(logicalDevice, sizeof(UniformBufferObject), MAX_FRAMES_IN_FLIGHT, uniformBuffersMemory, uniformBuffersMapped);
 
-        descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT);
-        descriptorSets = createDescriptorSets(logicalDevice, descriptorPool, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
+        VkDeviceSize modelBufferSize = sizeof(UniformBufferObject);
+        VkDeviceSize cameraBufferSize = sizeof(CameraUniformBufferObject);
+        uniformBuffers = createUniformBuffers(logicalDevice, modelBufferSize + cameraBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemory, uniformBuffersMapped);
 
-        updateUniformDescriptorSets(uniformBuffers, descriptorSets);
+        descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT * 2);
+        modelDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, modelDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
+        cameraDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, cameraDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
 
+        updateUniformDescriptorSets(uniformBuffers, 0, cameraBufferSize, cameraDescriptorSets);
+        updateUniformDescriptorSets(uniformBuffers, cameraBufferSize, modelBufferSize, modelDescriptorSets);
     }
 
     void mainLoop()
@@ -209,13 +238,16 @@ private:
         vkDeviceWaitIdle(logicalDevice);
     }
 
+    Camera camera;
+
     void drawFrame(uint32_t currentFrame)
     {
         uint32_t frameIndex = currentFrame % MAX_FRAMES_IN_FLIGHT;
         vkWaitForFences(logicalDevice, 1, &inFlightFences[frameIndex], VK_TRUE, UINT64_MAX);
 
         // Uniform Bufferの更新
-        updateUniformBuffers(uniformBuffersMapped, frameIndex);
+        updateCameraUniformBuffers(uniformBuffersMapped, 0, frameIndex, camera);
+        updateModelUniformBuffers(uniformBuffersMapped, sizeof(CameraUniformBufferObject), frameIndex);
 
         // SwapChainが古くなっている場合は再作成する
         uint32_t imageIndex;
@@ -275,7 +307,17 @@ private:
         }
     }
 
-    void updateUniformBuffers(const std::vector<void*> uniformBufferMapped, const uint32_t frameIndex)
+    void updateCameraUniformBuffers(const std::vector<void*> uniformBufferMapped, const size_t offset, const uint32_t frameIndex, const Camera& camera)
+    {
+        CameraUniformBufferObject cubo{};
+        cubo.view = glm::lookAt(camera.position, camera.lookat, camera.up);
+        cubo.proj = glm::perspective(glm::radians(camera.fov), camera.aspect, camera.nearClip, camera.farClip);
+        cubo.proj[1][1] *= -1; // GLMはY座標が反転しているので、Vulkanに合わせて反転する
+        char* dstPtr = static_cast<char*>(uniformBufferMapped[frameIndex]) + offset;
+        memcpy(dstPtr, &cubo, sizeof(cubo));
+    }
+
+    void updateModelUniformBuffers(const std::vector<void*> uniformBufferMapped, const size_t offset, const uint32_t frameIndex)
     {
         static auto startTime = std::chrono::high_resolution_clock::now();
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -283,21 +325,20 @@ private:
 
         UniformBufferObject ubo{};
         ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
-        ubo.proj[1][1] *= -1; // GLMはY座標が反転しているので、Vulkanに合わせて反転する
-        memcpy(uniformBufferMapped[frameIndex], &ubo, sizeof(ubo));
+        char* dstPtr = static_cast<char*>(uniformBufferMapped[frameIndex]) + offset;
+        memcpy(dstPtr, &ubo, sizeof(ubo));
     }
 
-    void updateUniformDescriptorSets(const std::vector<VkBuffer> uniformBuffers, const std::vector<VkDescriptorSet> uniformDescriptorSets)
+
+    void updateUniformDescriptorSets(const std::vector<VkBuffer> uniformBuffers, const VkDeviceSize offset, const VkDeviceSize range, const std::vector<VkDescriptorSet> uniformDescriptorSets)
     {
         size_t bufferCount = uniformBuffers.size();
         for(size_t i = 0; i < bufferCount; i++)
         {
             VkDescriptorBufferInfo bufferInfo{};
             bufferInfo.buffer = uniformBuffers[i];
-            bufferInfo.offset = 0;
-            bufferInfo.range = sizeof(UniformBufferObject); // バッファ全体を使う場合はVK_WHOLE_SIZEを指定できる
+            bufferInfo.offset = offset;
+            bufferInfo.range = range;
 
             VkWriteDescriptorSet descriptorWrite{};
             descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -352,7 +393,8 @@ private:
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[frameIndex], 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &cameraDescriptorSets[frameIndex], 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &modelDescriptorSets[frameIndex], 0, nullptr);
 
         VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
         VkDeviceSize offsets[] = { 0 };
@@ -373,7 +415,8 @@ private:
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
 
-        vkDestroyDescriptorSetLayout(logicalDevice, descriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(logicalDevice, modelDescriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(logicalDevice, cameraDescriptorSetLayout, nullptr);
         vkDestroyDescriptorPool(logicalDevice, descriptorPool, nullptr); // DescriptorSetsはDescriptorPoolと一緒に破棄されるので個別に破棄する必要はない
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -1008,7 +1051,7 @@ private:
     }
 
 #pragma region グラフィクスパイプラインの作成
-    VkPipeline createGraphicsPipeline(const VkRenderPass renderPass, const VkDescriptorSetLayout descriptorSetLayout, const VkShaderModule vertShaderModule, const VkShaderModule fragShaderModule)
+    VkPipeline createGraphicsPipeline(const VkRenderPass renderPass, const VkDescriptorSetLayout modelDescriptorSetLayout, const VkShaderModule vertShaderModule, const VkShaderModule fragShaderModule)
     {
         // シェーダの準備
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
@@ -1110,10 +1153,11 @@ private:
         colorBlendStateInfo.blendConstants[3] = 0.0f; // Optional
 
         // Pipeline Layout
+        VkDescriptorSetLayout setLayouts[] = { modelDescriptorSetLayout, cameraDescriptorSetLayout };
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout; 
+        pipelineLayoutInfo.setLayoutCount = 2;
+        pipelineLayoutInfo.pSetLayouts = setLayouts; 
         pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
         pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
@@ -1482,12 +1526,14 @@ private:
         allocInfo.descriptorSetCount = static_cast<uint32_t>(descriptorCount);
         allocInfo.pSetLayouts = layouts.data();
 
-        std::vector<VkDescriptorSet> descriptorSets(descriptorCount);
-        if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+        std::vector<VkDescriptorSet> modelDescriptorSets(descriptorCount);
+        auto result = vkAllocateDescriptorSets(device, &allocInfo, modelDescriptorSets.data());
+
+        if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor sets!");
         }
 
-        return descriptorSets;
+        return modelDescriptorSets;
     }
 #pragma endregion
 
