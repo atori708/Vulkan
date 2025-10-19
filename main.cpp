@@ -2056,6 +2056,8 @@ private:
 
                 vertices.push_back(vertex);
                 indices.push_back(static_cast<uint32_t>(indices.size()));
+
+                // TODO Tutorialでは重複頂点の対応があるのであとでやる
             }
         }
     }
