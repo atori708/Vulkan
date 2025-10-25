@@ -133,11 +133,26 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="VulkanCommandBuffer.cpp" />
+    <ClCompile Include="VulkanDevice.cpp" />
+    <ClCompile Include="VulkanQueue.cpp" />
+    <ClCompile Include="VulkanResources.cpp" />
+    <ClCompile Include="VulkanResourceUtility.cpp" />
+    <ClCompile Include="VulkanSwapChain.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\shader.frag" />
     <None Include="Shaders\shader.vert" />
     <None Include="Shaders\ShaderCompile.bat" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="VulkanCommandBuffer.h" />
+    <ClInclude Include="VulkanDevice.h" />
+    <ClInclude Include="VulkanQueue.h" />
+    <ClInclude Include="VulkanResources.h" />
+    <ClInclude Include="VulkanDefine.h" />
+    <ClInclude Include="VulkanResourceUtility.h" />
+    <ClInclude Include="VulkanSwapChain.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
