@@ -28,6 +28,7 @@
 
 #include "IModelLoader.h"
 #include "ModelLoaderByTinyObjLoader.h"
+#include "ModelLoaderAssimp.h"
 
 #include "Mesh.h"
 
@@ -197,7 +198,7 @@ private:
         // 同期オブジェクトの作成
         createSyncObjects();
 
-        modelLoader = new ModelLoaderByTinyObjLoader();
+        modelLoader = new ModelLoaderAssimp();
         // バッファの作成
         mesh = modelLoader->loadModel("Assets/viking_room.obj");
         vertexAndIndexBuffer = bufferCreator->createVertexAndIndexBuffer(mesh->vertices, mesh->indices, indexBufferOffset, vertexAndIndexBufferMemory);
