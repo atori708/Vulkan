@@ -7,7 +7,6 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <tiny_obj_loader.h>
 
 #include <iostream>
 #include <fstream>
@@ -27,7 +26,10 @@
 #include "VulkanBufferCreator.h"
 #include "VulkanTextureCreator.h"
 
-#include "MeshFormat.h"
+#include "IModelLoader.h"
+#include "ModelLoaderByTinyObjLoader.h"
+
+#include "Mesh.h"
 
 struct UniformBufferObject {
     glm::mat4 model;
@@ -71,23 +73,6 @@ private:
     const int MAX_FRAMES_IN_FLIGHT = 2;
     const VkClearValue clearColor = { {{0.1f, 0.0f, 0.0f, 1.0f}} };
 
-    const std::vector<const char*> validationLayers = {
-        "VK_LAYER_KHRONOS_validation"
-    };
-
-    const std::vector<const char*> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
-
-    std::vector<Vertex> vertices;
-    std::vector<uint16_t> indices;
-
-#ifdef NDEBUG
-    const bool enableValidationLayers = false;
-#else
-    const bool enableValidationLayers = true;
-#endif
-
     GLFWwindow* window;
     bool frameBufferResized = false;
 
@@ -102,7 +87,6 @@ private:
     VulkanTextureCreator* textureCreator;
 
     VkInstance instance;
-    VkDebugUtilsMessengerEXT debugMessenger;
     VkSurfaceKHR surface;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice logicalDevice;
@@ -147,6 +131,10 @@ private:
     VkSampler textureSampler;
 
     uint32_t currentFrame = 0;
+
+    IModelLoader* modelLoader;
+
+    Mesh* mesh;
     
     void initWindow()
     {
@@ -200,7 +188,6 @@ private:
         tempCommandPool = vulkanCommandBuffer->createCommandPool(graphicsQueueFamilyIndicies, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
         commandBuffers = vulkanCommandBuffer->createCommandBuffers(commandPool);
 
-
         // シェーダモジュールとグラフィックスパイプラインの作成
         vertShaderModule = vulkanResources->createShaderModule("shaders/vert.spv");
         fragShaderModule = vulkanResources->createShaderModule("shaders/frag.spv");
@@ -210,9 +197,10 @@ private:
         // 同期オブジェクトの作成
         createSyncObjects();
 
+        modelLoader = new ModelLoaderByTinyObjLoader();
         // バッファの作成
-        loadModel("Assets/viking_room.obj");
-        vertexAndIndexBuffer = bufferCreator->createVertexAndIndexBuffer(vertices, indices, indexBufferOffset, vertexAndIndexBufferMemory);
+        mesh = modelLoader->loadModel("Assets/viking_room.obj");
+        vertexAndIndexBuffer = bufferCreator->createVertexAndIndexBuffer(mesh->vertices, mesh->indices, indexBufferOffset, vertexAndIndexBufferMemory);
 
         VkDeviceSize modelBufferSize = sizeof(UniformBufferObject);
         VkDeviceSize cameraBufferSize = sizeof(CameraUniformBufferObject);
@@ -449,7 +437,7 @@ private:
         vkCmdBindIndexBuffer(commandBuffer, vertexAndIndexBuffer, indexBufferOffset, VK_INDEX_TYPE_UINT16);
 
         //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(mesh->indices.size()), 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -463,6 +451,7 @@ private:
     /// </summary>
     void cleanup()
     {
+        delete mesh;
         delete bufferCreator;
         delete textureCreator;
 
@@ -942,46 +931,6 @@ private:
         }
 
         throw std::runtime_error("failed to find supported format!");
-    }
-
-    /// <summary>
-    /// Objモデルの読み込み
-    /// </summary>
-    void loadModel(const std::string& modelPath)
-    {
-        tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
-        std::vector<tinyobj::material_t> materials;
-        std::string warning;
-        std::string err;
-
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, modelPath.c_str())) {
-            throw std::runtime_error(err);
-        }
-
-        for (const auto& shape : shapes) {
-            for (const auto& index : shape.mesh.indices) {
-                Vertex vertex{};
-
-                vertex.pos = {
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]
-                };
-
-                vertex.texCoord = {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0 - attrib.texcoords[2 * index.texcoord_index + 1] // OBJのテクスチャ座標は左下が原点なので反転する
-                };
-
-                vertex.color = { 1.0f, 1.0f, 1.0f };
-
-                vertices.push_back(vertex);
-                indices.push_back(static_cast<uint32_t>(indices.size()));
-
-                // TODO Tutorialでは重複頂点の対応があるのであとでやる
-            }
-        }
     }
 };
 
