@@ -7,7 +7,6 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <stb_image.h>
 #include <tiny_obj_loader.h>
 
 #include <iostream>
@@ -25,6 +24,10 @@
 #include "VulkanSwapChain.h"
 #include "VulkanResources.h"
 #include "VulkanCommandBuffer.h"
+#include "VulkanBufferCreator.h"
+#include "VulkanTextureCreator.h"
+
+#include "MeshFormat.h"
 
 struct UniformBufferObject {
     glm::mat4 model;
@@ -45,39 +48,6 @@ struct CameraUniformBufferObject {
     glm::mat4 proj;
 };
 
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
-
-    static VkVertexInputBindingDescription  getVkVertexInputBindingDescription()
-    {
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 3> getVkVertexInputAttributeDescriptions()
-    {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-        return attributeDescriptions;
-    }
-};
-
 class HelloTriangleApplication {
 public :
     void run() {
@@ -94,6 +64,7 @@ public :
         mainLoop();
         cleanup();
     }
+
 private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
@@ -126,6 +97,9 @@ private:
     VulkanSwapChain* vulkanSwapChain;
     VulkanResources* vulkanResources;
     VulkanCommandBuffer* vulkanCommandBuffer;
+
+    VulkanBufferCreator* bufferCreator;
+    VulkanTextureCreator* textureCreator;
 
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
@@ -203,6 +177,8 @@ private:
         auto graphicsQueueFamilyIndicies = queue.FindGraphicsQueueFamilies(physicalDevice, surface);
         vulkanCommandBuffer = new VulkanCommandBuffer(instance, logicalDevice, graphicsQueue, MAX_FRAMES_IN_FLIGHT, graphicsQueueFamilyIndicies);
         vulkanSwapChain = new VulkanSwapChain(window, physicalDevice, logicalDevice, &queue, vulkanCommandBuffer, vulkanResources);
+        bufferCreator = new VulkanBufferCreator(physicalDevice, logicalDevice, vulkanCommandBuffer);
+        textureCreator = new VulkanTextureCreator(logicalDevice, physicalDevice, bufferCreator, vulkanResources, vulkanCommandBuffer, deviceMaxAnisotropy);
 
         vkGetDeviceQueue(logicalDevice, graphicsQueueFamilyIndicies.presentFamily.value(), 0, &presentQueue);
 
@@ -236,20 +212,20 @@ private:
 
         // バッファの作成
         loadModel("Assets/viking_room.obj");
-        vertexAndIndexBuffer = createVertexAndIndexBuffer(logicalDevice, vertices, indices, indexBufferOffset, vertexAndIndexBufferMemory);
+        vertexAndIndexBuffer = bufferCreator->createVertexAndIndexBuffer(vertices, indices, indexBufferOffset, vertexAndIndexBufferMemory);
 
         VkDeviceSize modelBufferSize = sizeof(UniformBufferObject);
         VkDeviceSize cameraBufferSize = sizeof(CameraUniformBufferObject);
-        uniformBuffers = createUniformBuffers(logicalDevice, modelBufferSize + cameraBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemory, uniformBuffersMapped);
+        uniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize + cameraBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemory, uniformBuffersMapped);
 
         descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT * 2);
         cameraDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, cameraDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
         modelDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, modelDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
 
         // テクスチャの作成
-        textureImage = createTextureImage(physicalDevice, logicalDevice, "Assets/viking_room.png", textureImageMemory);
+        textureImage = textureCreator->createTextureImage("Assets/viking_room.png", textureImageMemory);
         textureImageView = vulkanResources->createImageView2D(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-        textureSampler = createTextureSampler(logicalDevice, deviceMaxAnisotropy);
+        textureSampler = textureCreator->createTextureSampler(deviceMaxAnisotropy);
 
         // カメラとモデルのDescriptorSetの更新
         updateUniformDescriptorSets(uniformBuffers, 0, cameraBufferSize, cameraDescriptorSets);
@@ -485,7 +461,10 @@ private:
     /// <summary>
     /// お片付け
     /// </summary>
-    void cleanup() {
+    void cleanup()
+    {
+        delete bufferCreator;
+        delete textureCreator;
 
         vulkanCommandBuffer->Release();
         delete vulkanCommandBuffer;
@@ -817,192 +796,6 @@ private:
     }
 #pragma endregion
 
-#pragma region バッファオブジェクト
-    /// <summary>
-    /// 頂点バッファを作成する
-    /// </summary>
-    VkBuffer createVertexBuffer(const VkDevice device, const std::vector<Vertex> vertices, VkDeviceMemory& bufferMemory)
-    {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        stagingBuffer = createBuffer(physicalDevice, device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBufferMemory);
-
-        // Staging Bufferにデータをコピーする
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), (size_t)bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        // GPUのVertex Bufferにデータをコピーする
-        VkBuffer vertexAndIndexBuffer;
-        vertexAndIndexBuffer = createBuffer(physicalDevice, device, 
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            bufferMemory);
-        vulkanCommandBuffer->copyBuffer(device, stagingBuffer, vertexAndIndexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-
-        return vertexAndIndexBuffer;
-    }
-
-    /// <summary>
-    /// インデックスバッファを作成する
-    /// </summary>
-    VkBuffer createIndexBuffer(const VkDevice device, const std::vector<uint16_t> indices, VkDeviceMemory& bufferMemory)
-    {
-        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        stagingBuffer = createBuffer(physicalDevice, device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBufferMemory);
-
-        // Staging Bufferにデータをコピーする
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, indices.data(), (size_t)bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        // GPUのVertex Bufferにデータをコピーする
-        VkBuffer vertexAndIndexBuffer;
-        vertexAndIndexBuffer = createBuffer(physicalDevice, device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            bufferMemory);
-        vulkanCommandBuffer->copyBuffer(device, stagingBuffer, vertexAndIndexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-
-        return vertexAndIndexBuffer;
-    }
-
-    /// <summary>
-    /// 頂点バッファとインデックスバッファをまとめて作成する
-    /// </summary>
-    VkBuffer createVertexAndIndexBuffer(const VkDevice device, const std::vector<Vertex> vertices, const std::vector<uint16_t> indices, VkDeviceSize& indexBufferOffset, VkDeviceMemory& bufferMemory)
-    {
-        VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
-        VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
-        VkDeviceSize bufferSize = vertexBufferSize + indexBufferSize;
-        indexBufferOffset = alignIndexBufferOffset(vertexBufferSize, physicalDevice);
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        stagingBuffer = createBuffer(physicalDevice, device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBufferMemory);
-
-        // Staging Bufferにデータをコピーする
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), (size_t)vertexBufferSize);
-        memcpy((char*)data + indexBufferOffset, indices.data(), (size_t)indexBufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        // GPUのVertex Bufferにデータをコピーする
-        VkBuffer vertexAndIndexBuffer;
-        vertexAndIndexBuffer = createBuffer(physicalDevice, device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            bufferMemory);
-        vulkanCommandBuffer->copyBuffer(device, stagingBuffer, vertexAndIndexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-
-        return vertexAndIndexBuffer;
-    }
-
-    std::vector<VkBuffer> createUniformBuffers(const VkDevice device, const VkDeviceSize bufferSize, const size_t bufferCount, std::vector<VkDeviceMemory>& uniformBufferMemories, std::vector<void*>& bufferMapped)
-    {
-        std::vector<VkBuffer> uniformBuffers(bufferCount);
-        uniformBufferMemories.resize(bufferCount);
-        bufferMapped.resize(bufferCount);
-
-        for (size_t i = 0; i < bufferCount; i++) {
-            uniformBuffers[i] = createBuffer(physicalDevice, device,
-                bufferSize,
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                uniformBufferMemories[i]);
-
-            vkMapMemory(device, uniformBufferMemories[i], 0, bufferSize, 0, &bufferMapped[i]);
-        }
-
-        return uniformBuffers;
-    }
-
-    // より適切なアライメントを取る例
-    VkDeviceSize alignIndexBufferOffset(VkDeviceSize offset, VkPhysicalDevice physicalDevice)
-    {
-        // デバイスの制約を取得
-        VkPhysicalDeviceProperties deviceProperties;
-        vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-
-        // minUniformBufferOffsetAlignment などの値を使用してアライメント
-        VkDeviceSize alignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
-
-        // オフセットを適切なアライメント境界に合わせる
-        return (offset + alignment - 1) & ~(alignment - 1);
-    }
-
-    VkBuffer createBuffer(const VkPhysicalDevice physicalDevice, const VkDevice device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& bufferMemory) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VkBuffer buffer;
-        if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create buffer!");
-        }
-
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
-
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate buffer memory!");
-        }
-
-        vkBindBufferMemory(device, buffer, bufferMemory, 0);
-
-        return buffer;
-    }
-
-    uint32_t findMemoryType(const VkPhysicalDevice physicalDevice, const uint32_t typeFilter, const VkMemoryPropertyFlags properties)
-    {
-        VkPhysicalDeviceMemoryProperties memProperties;
-        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-                return i;
-            }
-        }
-        throw std::runtime_error("failed to find suitable memory type!");
-    }
-#pragma endregion
-
 #pragma region ディスクリプタ
     VkDescriptorSetLayout createCameraDescriptorSetLayout(const VkDevice device)
     {
@@ -1093,91 +886,6 @@ private:
         }
 
         return modelDescriptorSets;
-    }
-#pragma endregion
-
-#pragma region TextureImage
-    VkImage createTextureImage(const VkPhysicalDevice physicalDevice, const VkDevice device, const std::string texturePath, VkDeviceMemory& textureImageMemory)
-    {
-        // 画像読み込み
-        int width, height, channels;
-        stbi_uc* pixels = stbi_load(texturePath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-        VkDeviceSize imageSize = width * height * 4;
-
-        if (!pixels) {
-            throw std::runtime_error("failed to load texture image! path:" + texturePath);
-        }
-
-        // 画像をStagingBufferに転送
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        stagingBuffer = createBuffer(physicalDevice, device,
-            imageSize,
-            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
-        memcpy(data, pixels, static_cast<size_t>(imageSize));
-        vkUnmapMemory(device, stagingBufferMemory);
-        stbi_image_free(pixels);
-
-        // VkImageの作成
-        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
-        VkImage textureImage = vulkanResources->createImage(physicalDevice, device,
-            width, height,
-            format,
-            VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            textureImageMemory);
-
-        // StagingBufferからVkImageへ転送
-        vulkanCommandBuffer->transitionImageLayout(device, textureImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        vulkanCommandBuffer->copyBufferToImage(device, stagingBuffer, textureImage, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-
-        // シェーダから参照できるようにLayoutを変更
-        vulkanCommandBuffer->transitionImageLayout(device, textureImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-
-        return textureImage;
-    }
-#pragma endregion
-
-#pragma region TextureSampler
-    VkSampler createTextureSampler(const VkDevice device, float anisotropy = 0)
-    {
-        if (anisotropy > deviceMaxAnisotropy) {
-            anisotropy = deviceMaxAnisotropy;
-        }
-
-        VkSamplerCreateInfo samplerInfo{};
-        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_LINEAR;
-        samplerInfo.minFilter = VK_FILTER_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.anisotropyEnable = anisotropy > 0;
-        samplerInfo.maxAnisotropy = anisotropy;
-        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        samplerInfo.unnormalizedCoordinates = VK_FALSE; // VK_TRUEにすると[0, texWidth)や[0, texHeight)の範囲でサンプリングする まあ使うことはない
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.mipLodBias = 0.0f;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
-
-        VkSampler textureSampler;
-        if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create texture sampler!");
-        }
-
-        return textureSampler;
     }
 #pragma endregion
 

@@ -133,6 +133,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="VulkanBufferCreator.cpp" />
+    <ClCompile Include="VulkanTextureCreator.cpp" />
     <ClCompile Include="VulkanCommandBuffer.cpp" />
     <ClCompile Include="VulkanDevice.cpp" />
     <ClCompile Include="VulkanQueue.cpp" />
@@ -146,6 +148,9 @@
     <None Include="Shaders\ShaderCompile.bat" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MeshFormat.h" />
+    <ClInclude Include="VulkanBufferCreator.h" />
+    <ClInclude Include="VulkanTextureCreator.h" />
     <ClInclude Include="VulkanCommandBuffer.h" />
     <ClInclude Include="VulkanDevice.h" />
     <ClInclude Include="VulkanQueue.h" />
