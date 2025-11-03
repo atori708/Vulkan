@@ -103,7 +103,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;F:\work\library\tinyobjloader-1.0.6;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>F:\work\Graphics\Vulkan\VulkanTest\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;F:\work\library\tinyobjloader-1.0.6;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -121,7 +121,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;F:\work\library\tinyobjloader-1.0.6;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>F:\work\Graphics\Vulkan\VulkanTest\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;F:\work\library\tinyobjloader-1.0.6;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
