@@ -103,14 +103,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>F:\work\Graphics\Vulkan\VulkanTest\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;F:\work\library\tinyobjloader-1.0.6;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;$(SolutionDir)\Library\tinyobjloader;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>F:\work\library\VulkanSDK\1.4.321.1\Lib;F:\work\library\glfw-3.4.bin.WIN64\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)\Library\assimp\lib\$(Configuration);F:\work\library\VulkanSDK\1.4.321.1\Lib;F:\work\library\glfw-3.4.bin.WIN64\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;assimp-vc143-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -121,23 +121,51 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>F:\work\Graphics\Vulkan\VulkanTest\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;F:\work\library\tinyobjloader-1.0.6;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;$(SolutionDir)\Library\tinyobjloader;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>F:\work\library\VulkanSDK\1.4.321.1\Lib;F:\work\library\glfw-3.4.bin.WIN64\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)\Library\assimp\lib\$(Configuration);F:\work\library\VulkanSDK\1.4.321.1\Lib;F:\work\library\glfw-3.4.bin.WIN64\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="IModelLoader.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="ModelLoaderAssimp.cpp" />
+    <ClCompile Include="ModelLoaderByTinyObjLoader.cpp" />
+    <ClCompile Include="VulkanBufferCreator.cpp" />
+    <ClCompile Include="VulkanTextureCreator.cpp" />
+    <ClCompile Include="VulkanCommandBuffer.cpp" />
+    <ClCompile Include="VulkanDevice.cpp" />
+    <ClCompile Include="VulkanQueue.cpp" />
+    <ClCompile Include="VulkanResources.cpp" />
+    <ClCompile Include="VulkanResourceUtility.cpp" />
+    <ClCompile Include="VulkanSwapChain.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\shader.frag" />
     <None Include="Shaders\shader.vert" />
     <None Include="Shaders\ShaderCompile.bat" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="IModelLoader.h" />
+    <ClInclude Include="Mesh.h" />
+    <ClInclude Include="MeshFormat.h" />
+    <ClInclude Include="ModelLoaderAssimp.h" />
+    <ClInclude Include="ModelLoaderByTinyObjLoader.h" />
+    <ClInclude Include="VulkanBufferCreator.h" />
+    <ClInclude Include="VulkanTextureCreator.h" />
+    <ClInclude Include="VulkanCommandBuffer.h" />
+    <ClInclude Include="VulkanDevice.h" />
+    <ClInclude Include="VulkanQueue.h" />
+    <ClInclude Include="VulkanResources.h" />
+    <ClInclude Include="VulkanDefine.h" />
+    <ClInclude Include="VulkanResourceUtility.h" />
+    <ClInclude Include="VulkanSwapChain.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
