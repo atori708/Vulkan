@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <spirv_cross/spirv_reflect.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -51,9 +52,105 @@ struct CameraUniformBufferObject {
     glm::mat4 proj;
 };
 
+struct ShaderResourceInfo {
+    bool hasBufferResource;
+    bool hasSamplerResource;
+
+    std::vector < ShaderBufferInfo> _bufferInfos;
+    std::vector<ShaderTextureInfo> _textureInfos;
+};
+
+using ShaderStageFlags = uint8_t;
+
+// どのシェーダステージで使われているかの8bitフラグ
+enum ShaderStageFlagBits : uint8_t {
+    ShaderStage_None = 0,
+    ShaderStage_Vertex = 1 << 0, // 0x01
+    ShaderStage_Fragment = 1 << 1, // 0x02
+    ShaderStage_Compute = 1 << 2, // 0x04
+    ShaderStage_Geometry = 1 << 3, // 0x08
+    ShaderStage_TessCtrl = 1 << 4, // 0x10
+    ShaderStage_TessEval = 1 << 5, // 0x20
+    // 必要に応じて追加
+};
+
+
+struct ShaderBufferInfo {
+    uint32_t set;
+    uint32_t binding;
+    uint32_t bufferSize;
+
+    std::vector<ShaderBufferPropertyInfo> _propertyInfos;
+};
+
+struct ShaderBufferPropertyInfo {
+    std::string name;
+    uint32_t offset;
+    uint32_t size;
+    ShaderStageFlags stageFlags;
+};
+
+
+struct ShaderTextureInfo {
+    uint32_t set;
+    uint32_t binding;
+    std::string name;
+};
+
 class HelloTriangleApplication {
 public :
+    ShaderResourceInfo CreateShaderResouceInfo()
+    {
+        ShaderResourceInfo shaderResourceInfo{};
+
+        // カメラのバッファ
+        ShaderBufferInfo cameraBufferInfo{};
+        cameraBufferInfo.bufferSize = 128;
+        std::vector<ShaderBufferPropertyInfo> propertyInfo{};
+        ShaderBufferPropertyInfo viewProperty{};
+        viewProperty.name = "view";
+        viewProperty.offset = 0;
+        viewProperty.size = 64;
+        viewProperty.stageFlags = ShaderStage_Vertex;
+        propertyInfo.push_back(viewProperty);
+        ShaderBufferPropertyInfo projProperty{};
+        projProperty.name = "proj";
+        projProperty.offset = 64;
+        projProperty.size = 64;
+        projProperty.stageFlags = ShaderStage_Vertex;
+        propertyInfo.push_back(projProperty);
+        cameraBufferInfo._propertyInfos = propertyInfo;
+        shaderResourceInfo._bufferInfos.push_back(cameraBufferInfo);
+        shaderResourceInfo.hasBufferResource = true;
+
+        // モデルのバッファ
+        ShaderBufferInfo modelBufferInfo{};
+        modelBufferInfo.bufferSize = 64;
+        std::vector<ShaderBufferPropertyInfo> modelPropertyInfo{};
+        ShaderBufferPropertyInfo modelProperty{};
+        modelProperty.name = "model";
+        modelProperty.offset = 0;
+        modelProperty.size = 64;
+        modelProperty.stageFlags = ShaderStage_Vertex;
+        modelPropertyInfo.push_back(modelProperty);
+        modelBufferInfo._propertyInfos = modelPropertyInfo;
+        shaderResourceInfo._bufferInfos.push_back(modelBufferInfo);
+
+        // モデルのテクスチャバッファ
+        shaderResourceInfo._textureInfos.resize(1);
+        ShaderTextureInfo textureInfo{};
+        textureInfo.name = "texSampler";
+        shaderResourceInfo._textureInfos[0] = textureInfo;
+        shaderResourceInfo.hasSamplerResource = true;
+
+
+
+        return shaderResourceInfo;
+    }
+
     void run() {
+        ShaderReflect();
+
         initWindow();
         initVulkan();
         auto swapChainExtent = vulkanSwapChain->GetSwapChainExtent();
@@ -66,6 +163,70 @@ public :
         camera.farClip = 10.0f;
         mainLoop();
         cleanup();
+    }
+
+    void ShaderReflect()
+    {
+        // Read SPIR-V from disk or similar.
+	    std::vector<uint32_t> spirv_binary = readFileAsUint32("shaders/vert.spv");
+
+	    spirv_cross::CompilerGLSL glsl(std::move(spirv_binary));
+
+	    // The SPIR-V is now parsed, and we can perform reflection on it.
+	    spirv_cross::ShaderResources resources = glsl.get_shader_resources();
+
+
+        for(auto & resource : resources.stage_inputs)
+        {
+            unsigned location = glsl.get_decoration(resource.id, spv::DecorationLocation);
+            printf("Input %s at location = %u\n", resource.name.c_str(), location);
+        }
+        for (auto& resource : resources.uniform_buffers)
+        {
+            // UBOの名前を取得
+            std::string ubo_name = resource.name;
+
+            // UBOの型IDを取得
+            spirv_cross::TypeID type_id = resource.base_type_id;
+
+            // 型情報を取得
+            const spirv_cross::SPIRType& type = glsl.get_type(type_id);
+
+            std::cout << "UBO: " << ubo_name << std::endl;
+
+            // メンバーをループで処理
+            for (size_t i = 0; i < type.member_types.size(); ++i)
+            {
+                // メンバーの型IDを取得
+                spirv_cross::TypeID member_type_id = type.member_types[i];
+
+                // メンバーの型情報を取得
+                const spirv_cross::SPIRType& member_type = glsl.get_type(member_type_id);
+
+                // メンバーの名前を取得
+                std::string member_name = glsl.get_member_name(type_id, i);
+
+                // メンバーの型を文字列化
+                //std::string member_type_str = spirv_cross::convert_to_string(member_type);
+
+                //std::cout << "  Member: " << member_name << " (" << member_type_str << ")" << std::endl;
+                std::cout << "  Member: " << member_name << std::endl;
+            }
+        }
+
+	    // Get all sampled images in the shader.
+	    for (auto &resource : resources.sampled_images)
+	    {
+		    unsigned set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		    unsigned binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+		    printf("Image %s at set = %u, binding = %u\n", resource.name.c_str(), set, binding);
+
+		    // Modify the decoration to prepare it for GLSL.
+		    glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+
+		    // Some arbitrary remapping if we want.
+		    glsl.set_decoration(resource.id, spv::DecorationBinding, set * 16 + binding);
+	    }
     }
 
 private:
@@ -196,7 +357,7 @@ private:
         // シェーダモジュールとグラフィックスパイプラインの作成
         vertShaderModule = vulkanResources->createShaderModule("shaders/vert.spv");
         fragShaderModule = vulkanResources->createShaderModule("shaders/frag.spv");
-        std::vector<VkDescriptorSetLayout>descriptorSetLayouts = { cameraDescriptorSetLayout, modelDescriptorSetLayout };
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { cameraDescriptorSetLayout, modelDescriptorSetLayout };
         graphicsPipeline = createGraphicsPipeline(renderPass, descriptorSetLayouts, vertShaderModule, fragShaderModule);
 
         // 同期オブジェクトの作成
