@@ -15,6 +15,23 @@ std::vector<char> readFile(const std::string& filename) {
     return buffer;
 }
 
+std::vector<uint32_t> readFileAsUint32(const std::string& filename) {
+    // Read the file as a vector of char
+    std::vector<char> charBuffer = readFile(filename);
+
+    // Ensure the size of the buffer is a multiple of 4 (size of uint32_t)
+    if (charBuffer.size() % sizeof(uint32_t) != 0) {
+        throw std::runtime_error("File size is not a multiple of 4 bytes, cannot convert to uint32_t.");
+    }
+
+    // Convert the char buffer to a uint32_t buffer
+    std::vector<uint32_t> uint32Buffer(charBuffer.size() / sizeof(uint32_t));
+    memcpy(uint32Buffer.data(), charBuffer.data(), charBuffer.size());
+
+    return uint32Buffer;
+}
+
+
 uint32_t findMemoryType(const VkPhysicalDevice physicalDevice, const uint32_t typeFilter, const VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
