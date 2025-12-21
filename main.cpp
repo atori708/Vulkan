@@ -118,8 +118,12 @@ private:
     VkDeviceMemory vertexAndIndexBufferMemory;
     VkDeviceSize indexBufferOffset;
 
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
+    std::vector<VkBuffer> cameraUniformBuffers;
+    std::vector<VkDeviceMemory> cameraUniformBufferMemories;
+    std::vector<void*> cameraUniformBuffersMapped;
+
+    std::vector<VkBuffer> modelUniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemories;
     std::vector<void*> uniformBuffersMapped;
 
     VkDescriptorPool descriptorPool;
@@ -205,7 +209,8 @@ private:
 
         VkDeviceSize modelBufferSize = sizeof(UniformBufferObject);
         VkDeviceSize cameraBufferSize = sizeof(CameraUniformBufferObject);
-        uniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize + cameraBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemory, uniformBuffersMapped);
+        cameraUniformBuffers = bufferCreator->createUniformBuffers(cameraBufferSize, MAX_FRAMES_IN_FLIGHT, cameraUniformBufferMemories, cameraUniformBuffersMapped);
+        modelUniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize + cameraBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemories, uniformBuffersMapped);
 
         descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT * 2);
         cameraDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, cameraDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
@@ -216,14 +221,14 @@ private:
         textureImageView = vulkanResources->createImageView2D(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
         textureSampler = textureCreator->createTextureSampler(deviceMaxAnisotropy);
 
-        // カメラとモデルのDescriptorSetの更新
-        updateUniformDescriptorSets(uniformBuffers, 0, cameraBufferSize, cameraDescriptorSets);
+        // カメラのDescriptorSetの更新
+        updateUniformDescriptorSets(cameraUniformBuffers, 0, cameraBufferSize, cameraDescriptorSets);
 
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = textureImageView;
         imageInfo.sampler = textureSampler;
-        updateModelDescriptorSets(uniformBuffers, cameraBufferSize, modelBufferSize, imageInfo);
+        updateModelDescriptorSets(modelUniformBuffers, 0, modelBufferSize, imageInfo);
     }
 
     void mainLoop()
@@ -247,8 +252,8 @@ private:
         auto swapChainExtent = vulkanSwapChain->GetSwapChainExtent();
 
         // Uniform Bufferの更新
-        updateCameraUniformBuffers(uniformBuffersMapped, 0, frameIndex, camera);
-        updateModelUniformBuffers(uniformBuffersMapped, sizeof(CameraUniformBufferObject), frameIndex);
+        updateCameraUniformBuffers(cameraUniformBuffersMapped, 0, frameIndex, camera);
+        updateModelUniformBuffers(uniformBuffersMapped, 0, frameIndex);
 
         // SwapChainが古くなっている場合は再作成する
         uint32_t imageIndex;
@@ -330,13 +335,13 @@ private:
         memcpy(dstPtr, &ubo, sizeof(ubo));
     }
 
-    void updateModelDescriptorSets(const std::vector<VkBuffer> uniformBuffers, const VkDeviceSize offset, const VkDeviceSize range, const VkDescriptorImageInfo imageInfo)
+    void updateModelDescriptorSets(const std::vector<VkBuffer> modelUniformBuffers, const VkDeviceSize offset, const VkDeviceSize range, const VkDescriptorImageInfo imageInfo)
     {
-        size_t bufferCount = uniformBuffers.size();
+        size_t bufferCount = modelUniformBuffers.size();
         for (size_t i = 0; i < bufferCount; i++)
         {
             VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.buffer = modelUniformBuffers[i];
             bufferInfo.offset = offset;
             bufferInfo.range = range;
 
@@ -470,8 +475,10 @@ private:
         vkDestroyDescriptorPool(logicalDevice, descriptorPool, nullptr); // DescriptorSetsはDescriptorPoolと一緒に破棄されるので個別に破棄する必要はない
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroyBuffer(logicalDevice, uniformBuffers[i], nullptr);
-            vkFreeMemory(logicalDevice, uniformBuffersMemory[i], nullptr);
+            vkDestroyBuffer(logicalDevice, cameraUniformBuffers[i], nullptr);
+            vkFreeMemory(logicalDevice, cameraUniformBufferMemories[i], nullptr);
+            vkDestroyBuffer(logicalDevice, modelUniformBuffers[i], nullptr);
+            vkFreeMemory(logicalDevice, uniformBuffersMemories[i], nullptr);
         }
 
         vkDestroyBuffer(logicalDevice, vertexAndIndexBuffer, nullptr);
