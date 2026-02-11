@@ -33,6 +33,21 @@
 
 #include "Mesh.h"
 
+using ShaderStageFlags = uint8_t;
+
+// どのシェーダステージで使われているかの8bitフラグ
+enum ShaderStageFlagBits : uint8_t {
+    ShaderStage_Unknown = 0,
+    ShaderStage_Vertex = 1 << 0,
+    ShaderStage_Fragment = 1 << 1,
+    ShaderStage_Compute = 1 << 2,
+    ShaderStage_Geometry = 1 << 3,
+    ShaderStage_TessCtrl = 1 << 4,
+    ShaderStage_TessEval = 1 << 5,
+    // 必要に応じて追加
+};
+
+
 struct UniformBufferObject {
     glm::mat4 model;
 };
@@ -52,28 +67,23 @@ struct CameraUniformBufferObject {
     glm::mat4 proj;
 };
 
-struct ShaderResourceInfo {
-    bool hasBufferResource;
-    bool hasSamplerResource;
-
-    std::vector < ShaderBufferInfo> _bufferInfos;
-    std::vector<ShaderTextureInfo> _textureInfos;
+struct ShaderBufferPropertyInfo {
+    std::string name;
+    uint32_t offset;
+    uint32_t size;
 };
 
-using ShaderStageFlags = uint8_t;
-
-// どのシェーダステージで使われているかの8bitフラグ
-enum ShaderStageFlagBits : uint8_t {
-    ShaderStage_None = 0,
-    ShaderStage_Vertex = 1 << 0, // 0x01
-    ShaderStage_Fragment = 1 << 1, // 0x02
-    ShaderStage_Compute = 1 << 2, // 0x04
-    ShaderStage_Geometry = 1 << 3, // 0x08
-    ShaderStage_TessCtrl = 1 << 4, // 0x10
-    ShaderStage_TessEval = 1 << 5, // 0x20
-    // 必要に応じて追加
+struct ShaderStageInputInfo
+{
+    uint32_t location;
+    std::string name;
 };
 
+struct ShaderStageOutputInfo
+{
+    uint32_t location;
+    std::string name;
+};
 
 struct ShaderBufferInfo {
     uint32_t set;
@@ -83,73 +93,50 @@ struct ShaderBufferInfo {
     std::vector<ShaderBufferPropertyInfo> _propertyInfos;
 };
 
-struct ShaderBufferPropertyInfo {
-    std::string name;
-    uint32_t offset;
-    uint32_t size;
-    ShaderStageFlags stageFlags;
-};
-
-
 struct ShaderTextureInfo {
     uint32_t set;
     uint32_t binding;
     std::string name;
 };
 
+/// <summary>
+/// Refrectionで取得したシェーダリソースの情報を格納する構造体
+/// </summary>
+struct ShaderResourceInfo {
+    bool hasBufferResource;
+    bool hasSamplerResource;
+
+    ShaderStageFlags stageFlags;
+
+    std::vector<ShaderStageInputInfo> _stageInputInfos;
+    std::vector<ShaderStageOutputInfo> _stageOutputInfos;
+    std::vector<ShaderBufferInfo> _bufferInfos;
+    std::vector<ShaderTextureInfo> _textureInfos;
+};
+
+/// <summary>
+/// 値の更新を実際にシェーダに反映する処理
+/// </summary>
+/// <remarks>
+/// 名前とかで何番目の値なのか覚えておいて、反映するタイミングでMap,Unmapをする
+/// </remarks>
+class ShaderPropertyApplier
+{
+private:
+  ShaderResourceInfo shaderResoureInfo;
+
+public:
+    void SetMatrix4x4(const std::string& name, const glm::mat4x4 matrix) {
+
+  }
+};
+
+
 class HelloTriangleApplication {
 public :
-    ShaderResourceInfo CreateShaderResouceInfo()
-    {
-        ShaderResourceInfo shaderResourceInfo{};
-
-        // カメラのバッファ
-        ShaderBufferInfo cameraBufferInfo{};
-        cameraBufferInfo.bufferSize = 128;
-        std::vector<ShaderBufferPropertyInfo> propertyInfo{};
-        ShaderBufferPropertyInfo viewProperty{};
-        viewProperty.name = "view";
-        viewProperty.offset = 0;
-        viewProperty.size = 64;
-        viewProperty.stageFlags = ShaderStage_Vertex;
-        propertyInfo.push_back(viewProperty);
-        ShaderBufferPropertyInfo projProperty{};
-        projProperty.name = "proj";
-        projProperty.offset = 64;
-        projProperty.size = 64;
-        projProperty.stageFlags = ShaderStage_Vertex;
-        propertyInfo.push_back(projProperty);
-        cameraBufferInfo._propertyInfos = propertyInfo;
-        shaderResourceInfo._bufferInfos.push_back(cameraBufferInfo);
-        shaderResourceInfo.hasBufferResource = true;
-
-        // モデルのバッファ
-        ShaderBufferInfo modelBufferInfo{};
-        modelBufferInfo.bufferSize = 64;
-        std::vector<ShaderBufferPropertyInfo> modelPropertyInfo{};
-        ShaderBufferPropertyInfo modelProperty{};
-        modelProperty.name = "model";
-        modelProperty.offset = 0;
-        modelProperty.size = 64;
-        modelProperty.stageFlags = ShaderStage_Vertex;
-        modelPropertyInfo.push_back(modelProperty);
-        modelBufferInfo._propertyInfos = modelPropertyInfo;
-        shaderResourceInfo._bufferInfos.push_back(modelBufferInfo);
-
-        // モデルのテクスチャバッファ
-        shaderResourceInfo._textureInfos.resize(1);
-        ShaderTextureInfo textureInfo{};
-        textureInfo.name = "texSampler";
-        shaderResourceInfo._textureInfos[0] = textureInfo;
-        shaderResourceInfo.hasSamplerResource = true;
-
-
-
-        return shaderResourceInfo;
-    }
 
     void run() {
-        ShaderReflect();
+        ShaderReflect("shaders/frag.spv");
 
         initWindow();
         initVulkan();
@@ -165,68 +152,151 @@ public :
         cleanup();
     }
 
-    void ShaderReflect()
+    ShaderStageFlags GetShaderStageFlag(spv::ExecutionModel model)
+    {
+        // シェーダーステージに対応するフラグを返す
+        switch (model)
+        {
+        case spv::ExecutionModelVertex:
+            return ShaderStage_Vertex;
+        case spv::ExecutionModelFragment:
+            return ShaderStage_Fragment;
+        case spv::ExecutionModelGLCompute:
+            return ShaderStage_Compute;
+        case spv::ExecutionModelGeometry:
+            return ShaderStage_Geometry;
+        case spv::ExecutionModelTessellationControl:
+            return ShaderStage_TessCtrl;
+        case spv::ExecutionModelTessellationEvaluation:
+            return ShaderStage_TessEval;
+        default:
+            return ShaderStage_Unknown;
+        }
+    }
+
+    ShaderResourceInfo CreateVertextShaderResouceInfo()
+    {
+        ShaderResourceInfo shaderResourceInfo{};
+
+        // カメラのバッファ
+        ShaderBufferInfo cameraBufferInfo{};
+        cameraBufferInfo.bufferSize = 128;
+        std::vector<ShaderBufferPropertyInfo> propertyInfo{};
+        ShaderBufferPropertyInfo viewProperty{};
+        viewProperty.name = "view";
+        viewProperty.offset = 0;
+        viewProperty.size = 64;
+        propertyInfo.push_back(viewProperty);
+        ShaderBufferPropertyInfo projProperty{};
+        projProperty.name = "proj";
+        projProperty.offset = 64;
+        projProperty.size = 64;
+        propertyInfo.push_back(projProperty);
+        cameraBufferInfo._propertyInfos = propertyInfo;
+        shaderResourceInfo._bufferInfos.push_back(cameraBufferInfo);
+        shaderResourceInfo.hasBufferResource = true;
+
+        // モデルのバッファ
+        ShaderBufferInfo modelBufferInfo{};
+        modelBufferInfo.bufferSize = 64;
+        std::vector<ShaderBufferPropertyInfo> modelPropertyInfo{};
+        ShaderBufferPropertyInfo modelProperty{};
+        modelProperty.name = "model";
+        modelProperty.offset = 0;
+        modelProperty.size = 64;
+        modelPropertyInfo.push_back(modelProperty);
+        modelBufferInfo._propertyInfos = modelPropertyInfo;
+        shaderResourceInfo._bufferInfos.push_back(modelBufferInfo);
+
+        return shaderResourceInfo;
+    }
+
+    ShaderResourceInfo ShaderReflect(std::string shaderPath)
     {
         // Read SPIR-V from disk or similar.
-	    std::vector<uint32_t> spirv_binary = readFileAsUint32("shaders/vert.spv");
+	    std::vector<uint32_t> spirv_binary = readFileAsUint32(shaderPath);
 
 	    spirv_cross::CompilerGLSL glsl(std::move(spirv_binary));
-
+        
 	    // The SPIR-V is now parsed, and we can perform reflection on it.
 	    spirv_cross::ShaderResources resources = glsl.get_shader_resources();
 
+        ShaderResourceInfo shaderResourceInfo{};
+        shaderResourceInfo.stageFlags = GetShaderStageFlag(glsl.get_execution_model());
 
-        for(auto & resource : resources.stage_inputs)
+        shaderResourceInfo._stageInputInfos.resize(resources.stage_inputs.size());
+        std::cout << "-----Stage Input Infos" << std::endl;
+        for (int i = 0; i < resources.stage_inputs.size(); ++i)
         {
-            unsigned location = glsl.get_decoration(resource.id, spv::DecorationLocation);
-            printf("Input %s at location = %u\n", resource.name.c_str(), location);
+            auto& stageInput = resources.stage_inputs[i];
+            ShaderStageInputInfo inputInfo{};
+            inputInfo.location = glsl.get_decoration(stageInput.id, spv::DecorationLocation);
+            inputInfo.name = stageInput.name;
+            shaderResourceInfo._stageInputInfos[i] = inputInfo;
+
+            printf("\tInput %s at location = %u\n", stageInput.name.c_str(), inputInfo.location);
         }
-        for (auto& resource : resources.uniform_buffers)
+
+        shaderResourceInfo._stageOutputInfos.resize(resources.stage_outputs.size());
+        std::cout << "-----Stage Output Infos" << std::endl;
+        for (int i = 0; i < resources.stage_outputs.size(); ++i)
         {
-            // UBOの名前を取得
-            std::string ubo_name = resource.name;
+            auto& stageOutput = resources.stage_outputs[i];
+            ShaderStageOutputInfo outputInfo{};
+            outputInfo.location = glsl.get_decoration(stageOutput.id, spv::DecorationLocation);
+            outputInfo.name = stageOutput.name;
+            shaderResourceInfo._stageOutputInfos[outputInfo.location] = outputInfo;
+            printf("\tOutput %s at location = %u\n", stageOutput.name.c_str(), outputInfo.location);
+        }
 
-            // UBOの型IDを取得
-            spirv_cross::TypeID type_id = resource.base_type_id;
-
-            // 型情報を取得
-            const spirv_cross::SPIRType& type = glsl.get_type(type_id);
-
-            std::cout << "UBO: " << ubo_name << std::endl;
-
-            // メンバーをループで処理
-            for (size_t i = 0; i < type.member_types.size(); ++i)
+        std::cout << "-----Uniform Buffer Infos" << std::endl;
+        shaderResourceInfo.hasBufferResource = resources.uniform_buffers.size() > 0;
+        if (shaderResourceInfo.hasBufferResource)
+        {
+            shaderResourceInfo._bufferInfos.resize(resources.uniform_buffers.size());
+            for(int i = 0; i < resources.uniform_buffers.size(); ++i)
             {
-                // メンバーの型IDを取得
-                spirv_cross::TypeID member_type_id = type.member_types[i];
+                auto& uniformBuffer = resources.uniform_buffers[i];
+                unsigned location = glsl.get_decoration(uniformBuffer.id, spv::DecorationLocation);
+                std::string name = uniformBuffer.name;
+                std::cout << "\tInput: " << name << ", Location: " << location << std::endl;
+                auto propertyType = glsl.get_type(uniformBuffer.base_type_id);
 
-                // メンバーの型情報を取得
-                const spirv_cross::SPIRType& member_type = glsl.get_type(member_type_id);
+                shaderResourceInfo._bufferInfos[i].set = glsl.get_decoration(uniformBuffer.id, spv::DecorationDescriptorSet);
+                shaderResourceInfo._bufferInfos[i].binding = glsl.get_decoration(uniformBuffer.id, spv::DecorationBinding);
 
-                // メンバーの名前を取得
-                std::string member_name = glsl.get_member_name(type_id, i);
+                shaderResourceInfo._bufferInfos[i].bufferSize = glsl.get_declared_struct_size(propertyType);
 
-                // メンバーの型を文字列化
-                //std::string member_type_str = spirv_cross::convert_to_string(member_type);
-
-                //std::cout << "  Member: " << member_name << " (" << member_type_str << ")" << std::endl;
-                std::cout << "  Member: " << member_name << std::endl;
+                auto shaderStageType = glsl.get_execution_model();
+                auto propertySize = propertyType.member_types.size();
+                shaderResourceInfo._bufferInfos[i]._propertyInfos.resize(propertySize);
+                for(int propertyIndex = 0; propertyIndex < propertySize; ++propertyIndex)
+                {
+                    ShaderBufferPropertyInfo propertyInfo{};
+                    propertyInfo.name = glsl.get_member_name(uniformBuffer.base_type_id, propertyIndex);
+                    propertyInfo.offset = glsl.type_struct_member_offset(propertyType, propertyIndex);
+                    propertyInfo.size = glsl.get_declared_struct_member_size(propertyType, propertyIndex);
+                    shaderResourceInfo._bufferInfos[i]._propertyInfos[propertyIndex] = propertyInfo;
+                }
             }
         }
 
-	    // Get all sampled images in the shader.
-	    for (auto &resource : resources.sampled_images)
-	    {
-		    unsigned set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
-		    unsigned binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
-		    printf("Image %s at set = %u, binding = %u\n", resource.name.c_str(), set, binding);
+        std::cout << "-----Sampled Image Infos" << std::endl;
+        shaderResourceInfo._textureInfos.resize(resources.sampled_images.size());
 
-		    // Modify the decoration to prepare it for GLSL.
-		    glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+        for (int i = 0; i < resources.sampled_images.size(); ++i)
+        {
+            auto& image = resources.sampled_images[i];
+            ShaderTextureInfo textureInfo{};
+            textureInfo.set = glsl.get_decoration(image.id, spv::DecorationDescriptorSet);
+            textureInfo.binding = glsl.get_decoration(image.id, spv::DecorationBinding);
+            textureInfo.name = image.name;
+            shaderResourceInfo._textureInfos[i] = textureInfo;
 
-		    // Some arbitrary remapping if we want.
-		    glsl.set_decoration(resource.id, spv::DecorationBinding, set * 16 + binding);
-	    }
+            printf("Image %s at set = %u, binding = %u\n", image.name.c_str(), textureInfo.set, textureInfo.binding);
+        }
+
+        return shaderResourceInfo;
     }
 
 private:
@@ -368,10 +438,12 @@ private:
         mesh = modelLoader->loadModel("Assets/viking_room.obj");
         vertexAndIndexBuffer = bufferCreator->createVertexAndIndexBuffer(mesh->vertices, mesh->indices, indexBufferOffset, vertexAndIndexBufferMemory);
 
-        VkDeviceSize modelBufferSize = sizeof(UniformBufferObject);
         VkDeviceSize cameraBufferSize = sizeof(CameraUniformBufferObject);
         cameraUniformBuffers = bufferCreator->createUniformBuffers(cameraBufferSize, MAX_FRAMES_IN_FLIGHT, cameraUniformBufferMemories, cameraUniformBuffersMapped);
-        modelUniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize + cameraBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemories, uniformBuffersMapped);
+
+        auto vertexShaderResourceInfo = CreateVertextShaderResouceInfo();
+        VkDeviceSize modelBufferSize = vertexShaderResourceInfo._bufferInfos[1].bufferSize; // TODO 1番目がモデルバッファとは限らないので要修正(バインド処理とかが必要になるのかな)
+        modelUniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize, MAX_FRAMES_IN_FLIGHT, uniformBuffersMemories, uniformBuffersMapped);
 
         descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT * 2);
         cameraDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, cameraDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
@@ -491,6 +563,8 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
+
+        // 回転させる
         ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         char* dstPtr = static_cast<char*>(uniformBufferMapped[frameIndex]) + offset;
         memcpy(dstPtr, &ubo, sizeof(ubo));
