@@ -7,6 +7,7 @@ layout(set = 0, binding = 0) uniform CameraUniformBufferObject {
 
 layout(set = 1, binding = 0) uniform ModelUniformBufferObject {
     mat4 model;
+    vec3 color;
 } modelUbo;
 
 layout(location = 0) in vec3 inPosition; // 入力頂点座標
@@ -18,6 +19,6 @@ layout(location = 1) out vec2 fragTexCoord; // 出力UV座標
 
 void main() {
     gl_Position = cameraUbo.proj * cameraUbo.view * modelUbo.model * vec4(inPosition, 1.0);
-    fragColor = inColor;
+    fragColor = modelUbo.color;
     fragTexCoord = inTexCoord;
 }

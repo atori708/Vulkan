@@ -26,6 +26,7 @@
 #include "VulkanCommandBuffer.h"
 #include "VulkanBufferCreator.h"
 #include "VulkanTextureCreator.h"
+#include "VulkanTextureCreator.h"
 
 #include "IModelLoader.h"
 #include "ModelLoaderByTinyObjLoader.h"
@@ -118,11 +119,18 @@ struct ShaderResourceInfo {
     std::vector<ShaderTextureInfo> _textureInfos;
 };
 
-
 class ShaderCPUResource
 {
-    VkDescriptorSet cameraDescriptorSet;
-    VkDescriptorSet modelDescriptorSet;
+    int count;
+
+	ShaderResourceInfo vertexShaderResourceInfo;
+	ShaderResourceInfo fragmentShaderResourceInfo;
+
+    VkDescriptorSetLayout cameraDescriptorSetLayout;
+    VkDescriptorSetLayout modelDescriptorSetLayout;
+
+    std::vector<VkDescriptorSet> cameraDescriptorSets;
+    std::vector<VkDescriptorSet> modelDescriptorSets;
 
     std::vector<VkBuffer> cameraUniformBuffers;
     std::vector<VkDeviceMemory> cameraUniformBufferMemories;
@@ -133,20 +141,63 @@ class ShaderCPUResource
     std::vector<void*> modelUniformBuffersMapped;
 
 public:
-    ShaderCPUResource(VkDescriptorSet cameraDescriptorSet,
-        VkDescriptorSet modelDescriptorSet,
-        std::vector<VkBuffer>& cameraUniformBuffers,
-        std::vector<VkDeviceMemory>& cameraUniformBuffersMemories,
-        std::vector<void*>& cameraUniformBuffersMapped,
-        std::vector<VkBuffer>& modelUniformBuffers,
-        std::vector<VkDeviceMemory>& modelUniformBuffersMemories,
-        std::vector<void*>& modelUniformBuffersMapped
-    )
-        : cameraDescriptorSet(cameraDescriptorSet), modelDescriptorSet(modelDescriptorSet),
-        cameraUniformBuffers(cameraUniformBuffers), cameraUniformBufferMemories(cameraUniformBuffersMemories), cameraUniformBuffersMapped(cameraUniformBuffersMapped),
-        modelUniformBuffers(modelUniformBuffers), modelUniformBuffersMemories(modelUniformBuffersMemories), modelUniformBuffersMapped(modelUniformBuffersMapped)
+    ShaderCPUResource(const VkDevice device, const VulkanBufferCreator* bufferCreator, const VulkanTextureCreator* textureCreator, const VulkanResources* vulkanResources, VkDescriptorPool descriptorPool, int count)
     {
+        // TODO BufferCreatorとVulkanResourcesは1つのクラスでいいのでは？
+
+        this->count = count;
+        vertexShaderResourceInfo = ShaderReflect("shaders/vert.spv");
+        fragmentShaderResourceInfo = ShaderReflect("shaders/frag.spv");
+
+        // Uniform Bufferの作成
+        int cameraBufferIndex = 0; // TODO バッファの並び順は決まってないので、ShaderReflectで取得した情報をもとにどのバッファがカメラ用でどのバッファがモデル用かを判断する必要がある
+        int modelBufferIndex = 1;
+        auto cameraBufferInfo = vertexShaderResourceInfo._bufferInfos[cameraBufferIndex];
+        auto modelBufferInfo = vertexShaderResourceInfo._bufferInfos[modelBufferIndex];
+        VkDeviceSize cameraBufferSize = cameraBufferInfo.bufferSize;
+        cameraUniformBuffers = bufferCreator->createUniformBuffers(cameraBufferSize, count, cameraUniformBufferMemories, cameraUniformBuffersMapped);
+
+        VkDeviceSize modelBufferSize = modelBufferInfo.bufferSize;
+        modelUniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize, count, modelUniformBuffersMemories, modelUniformBuffersMapped);
+
+        cameraDescriptorSetLayout = createCameraDescriptorSetLayout(device);
+        modelDescriptorSetLayout = createModelDescriptorSetLayout(vertexShaderResourceInfo, fragmentShaderResourceInfo, device);
+        cameraDescriptorSets = vulkanResources->createDescriptorSets(device, descriptorPool, cameraDescriptorSetLayout, count);
+        modelDescriptorSets = vulkanResources->createDescriptorSets(device, descriptorPool, modelDescriptorSetLayout, count);
+
+        // バッファとテクスチャとDescriptorSetsの紐づけ
+        updateCameraDescriptorSets(device, cameraUniformBuffers, cameraBufferInfo, 0, cameraDescriptorSets);
+        updateModelDescriptorSets(device, textureCreator, modelUniformBuffers, modelDescriptorSets, vertexShaderResourceInfo, fragmentShaderResourceInfo);
     }
+
+    void Release(VkDevice device)
+    {
+        for (size_t i = 0; i < count; i++) {
+            vkDestroyBuffer(device, cameraUniformBuffers[i], nullptr);
+            vkFreeMemory(device, cameraUniformBufferMemories[i], nullptr);
+            vkDestroyBuffer(device, modelUniformBuffers[i], nullptr);
+            vkFreeMemory(device, modelUniformBuffersMemories[i], nullptr);
+        }
+
+        vkDestroyDescriptorSetLayout(device, modelDescriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(device, cameraDescriptorSetLayout, nullptr);
+    }
+
+    const ShaderResourceInfo VertexShaderResourceInfo() const {
+        return vertexShaderResourceInfo;
+	}
+
+    const ShaderResourceInfo FragmentShaderResourceInfo() const {
+        return fragmentShaderResourceInfo;
+    }
+
+    const VkDescriptorSetLayout CameraDescriptorSetLayout() const {
+        return cameraDescriptorSetLayout;
+	}
+
+    const VkDescriptorSetLayout ModelDescriptorSetLayout() const {
+        return modelDescriptorSetLayout;
+	}
 
     const VkBuffer CameraUniformBuffers(int frameIndex) const {
         return cameraUniformBuffers[frameIndex];
@@ -157,92 +208,17 @@ public:
     const std::vector<VkBuffer> ModelUniformBuffers() const {
         return modelUniformBuffers;
     }
-    void* ModelUniformBuffersMapped(int frameIndex){
+    void* ModelUniformBuffersMapped(int frameIndex) {
         return modelUniformBuffersMapped[frameIndex];
     }
-    const VkDescriptorSet CameraDescriptorSet() const {
-        return cameraDescriptorSet;
+    const VkDescriptorSet* CameraDescriptorSet(int frameIndex) const {
+        return &cameraDescriptorSets[frameIndex];
     }
-    const VkDescriptorSet ModelDescriptorSet() const {
-        return modelDescriptorSet;
+    const VkDescriptorSet* ModelDescriptorSet(int frameIndex) const {
+        return &modelDescriptorSets[frameIndex];
     }
-};
 
-/// <summary>
-/// 値の更新を実際にシェーダに反映する処理
-/// </summary>
-/// <remarks>
-/// 名前とかで何番目の値なのか覚えておいて、反映するタイミングでMap,Unmapをする
-/// </remarks>
-class ShaderPropertyApplier
-{
 private:
-    ShaderCPUResource shaderCPUResource;
-    ShaderResourceInfo vertexShaderResoureInfo;
-    ShaderResourceInfo fragmentShaderResourceInfo;
-
-    std::unordered_map<std::string, glm::mat4x4> _matrixMap;
-
-public:
-    ShaderPropertyApplier(ShaderCPUResource shaderCPUResource, ShaderResourceInfo vertexShaderResoureInfo, ShaderResourceInfo fragmentShaderResourceInfo)
-        : shaderCPUResource(shaderCPUResource), vertexShaderResoureInfo(vertexShaderResoureInfo), fragmentShaderResourceInfo(fragmentShaderResourceInfo)
-    {
-        _matrixMap["view"] = glm::mat4x4(1.0f);
-        _matrixMap["proj"] = glm::mat4x4(1.0f);
-        _matrixMap["model"] = glm::mat4x4(1.0f);
-    }
-
-    void SetMatrix4x4(const std::string& name, const glm::mat4x4 matrix) {
-		_matrixMap[name] = matrix;
-    }
-
-    void Apply(int frameIndex)
-    {
-		// カメラ行列更新
-		char* dstPtr = static_cast<char*>(shaderCPUResource.CameraUniformBuffersMapped(frameIndex));
-		auto bufferInfo = vertexShaderResoureInfo._bufferInfos[0]; // TODO 0番目がカメラ用のバッファとは限らない
-		ApplyBuffer(dstPtr, bufferInfo, frameIndex);
-
-        // モデル行列更新
-        dstPtr = static_cast<char*>(shaderCPUResource.ModelUniformBuffersMapped(frameIndex));
-		auto modelBufferInfo = vertexShaderResoureInfo._bufferInfos[1];
-		ApplyBuffer(dstPtr, modelBufferInfo, frameIndex);
-    }
-
-private :
-    void ApplyBuffer(char* ptr, const ShaderBufferInfo bufferInfo, int frameIndex)
-    {
-        for (auto propertyInfo : bufferInfo._propertyInfos)
-        {
-            auto matrix = _matrixMap.find(propertyInfo.name);
-            if (matrix == _matrixMap.end())
-            {
-                throw std::runtime_error("No value set for property: " + propertyInfo.name);
-            }
-            memcpy(ptr + propertyInfo.offset, &_matrixMap[propertyInfo.name], propertyInfo.size);
-        }
-	}
-};
-
-
-class HelloTriangleApplication {
-public :
-
-    void run() {
-
-        initWindow();
-        initVulkan();
-        auto swapChainExtent = vulkanSwapChain->GetSwapChainExtent();
-        camera.position = glm::vec3(2.0f, 2.0f, 2.0f);
-        camera.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
-        camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
-        camera.fov = 45.0f;
-        camera.aspect = swapChainExtent.width / (float)swapChainExtent.height;
-        camera.nearClip = 0.1f;
-        camera.farClip = 10.0f;
-        mainLoop();
-        cleanup();
-    }
 
     ShaderStageFlags GetShaderStageFlag(spv::ExecutionModel model)
     {
@@ -269,12 +245,12 @@ public :
     ShaderResourceInfo ShaderReflect(std::string shaderPath)
     {
         // Read SPIR-V from disk or similar.
-	    std::vector<uint32_t> spirv_binary = readFileAsUint32(shaderPath);
+        std::vector<uint32_t> spirv_binary = readFileAsUint32(shaderPath);
 
-	    spirv_cross::CompilerGLSL glsl(std::move(spirv_binary));
-        
-	    // The SPIR-V is now parsed, and we can perform reflection on it.
-	    spirv_cross::ShaderResources resources = glsl.get_shader_resources();
+        spirv_cross::CompilerGLSL glsl(std::move(spirv_binary));
+
+        // The SPIR-V is now parsed, and we can perform reflection on it.
+        spirv_cross::ShaderResources resources = glsl.get_shader_resources();
 
         auto shaderStageType = GetShaderStageFlag(glsl.get_execution_model());
 
@@ -310,7 +286,7 @@ public :
         if (shaderResourceInfo.hasBufferResource)
         {
             shaderResourceInfo._bufferInfos.resize(resources.uniform_buffers.size());
-            for(int i = 0; i < resources.uniform_buffers.size(); ++i)
+            for (int i = 0; i < resources.uniform_buffers.size(); ++i)
             {
                 ShaderBufferInfo bufferInfo{};
                 auto& uniformBuffer = resources.uniform_buffers[i];
@@ -326,7 +302,7 @@ public :
 
                 auto propertySize = propertyType.member_types.size();
                 bufferInfo._propertyInfos.resize(propertySize);
-                for(int propertyIndex = 0; propertyIndex < propertySize; ++propertyIndex)
+                for (int propertyIndex = 0; propertyIndex < propertySize; ++propertyIndex)
                 {
                     ShaderBufferPropertyInfo propertyInfo{};
                     propertyInfo.name = glsl.get_member_name(uniformBuffer.base_type_id, propertyIndex);
@@ -334,7 +310,7 @@ public :
                     propertyInfo.size = glsl.get_declared_struct_member_size(propertyType, propertyIndex);
                     bufferInfo._propertyInfos[propertyIndex] = propertyInfo;
                 }
-				
+
                 shaderResourceInfo._bufferInfos[i] = bufferInfo;
             }
         }
@@ -358,7 +334,239 @@ public :
         return shaderResourceInfo;
     }
 
+    VkDescriptorSetLayout createCameraDescriptorSetLayout(const VkDevice device)
+    {
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = 0;
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &uboLayoutBinding;
+
+        VkDescriptorSetLayout descriptorSetLayout;
+        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+
+        return descriptorSetLayout;
+
+    }
+
+    VkDescriptorSetLayout createModelDescriptorSetLayout(const ShaderResourceInfo vertexShaderResourceInfo, const ShaderResourceInfo fragmentShaderResourceInfo, const VkDevice device)
+    {
+        std::vector<VkDescriptorSetLayoutBinding> bindings{};
+        if (vertexShaderResourceInfo.hasBufferResource) {
+            VkDescriptorSetLayoutBinding uboLayoutBinding{};
+            uboLayoutBinding.binding = 0;
+            uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            uboLayoutBinding.descriptorCount = 1; // 1でも問題ない...か？
+            uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+            bindings.push_back(uboLayoutBinding);
+        }
+
+        // TODO フラグメントシェーダでしかテクスチャを使うことはほぼないのでこれで問題ないが、両方でテクスチャを使う場合もあるかも
+        if (fragmentShaderResourceInfo.hasSamplerResource)
+        {
+            VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+            samplerLayoutBinding.binding = 1;
+            samplerLayoutBinding.descriptorCount = 1;
+            samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            samplerLayoutBinding.pImmutableSamplers = nullptr;
+            samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            bindings.push_back(samplerLayoutBinding);
+        }
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = bindings.size();
+        layoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout descriptorSetLayout;
+        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+
+        return descriptorSetLayout;
+    }
+
+    void updateCameraDescriptorSets(const VkDevice device, const std::vector<VkBuffer> uniformBuffers, const ShaderBufferInfo shaderBufferInfo, const VkDeviceSize offset, const std::vector<VkDescriptorSet> uniformDescriptorSets)
+    {
+        size_t bufferCount = uniformBuffers.size();
+        for (size_t i = 0; i < bufferCount; i++)
+        {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.offset = offset;
+            bufferInfo.range = shaderBufferInfo.bufferSize;
+
+            VkWriteDescriptorSet descriptorWrites{};
+            descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites.dstSet = uniformDescriptorSets[i];
+            descriptorWrites.dstBinding = 0;
+            descriptorWrites.dstArrayElement = 0;
+            descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrites.descriptorCount = 1;
+            descriptorWrites.pBufferInfo = &bufferInfo;
+            descriptorWrites.pImageInfo = nullptr; // Optional
+            descriptorWrites.pTexelBufferView = nullptr; // Optional
+            vkUpdateDescriptorSets(device, 1, &descriptorWrites, 0, nullptr);
+        }
+    }
+
+    void updateModelDescriptorSets(const VkDevice device, const VulkanTextureCreator* textureCreator, const std::vector<VkBuffer> modelUniformBuffers, const std::vector<VkDescriptorSet> modelDescriptorSets, ShaderResourceInfo vertexShaderResourceInfo, ShaderResourceInfo fragmentShaderResourceInfo)
+    {
+        size_t bufferCount = modelUniformBuffers.size();
+        for (size_t i = 0; i < bufferCount; i++)
+        {
+            std::vector<VkWriteDescriptorSet> descriptorWrites;
+
+            // バッファ
+            if (vertexShaderResourceInfo.hasBufferResource) {
+                auto shaderBufferInfo = vertexShaderResourceInfo._bufferInfos[1]; // TODO 1番目がモデル用のバッファとは限らないので、ShaderReflectで取得した情報をもとにどのバッファがモデル用かを判断する必要がある
+                VkWriteDescriptorSet writeDescriptorSet{};
+                VkDescriptorBufferInfo bufferInfo{};
+                bufferInfo.buffer = modelUniformBuffers[i];
+                bufferInfo.offset = 0;
+                bufferInfo.range = shaderBufferInfo.bufferSize;
+                writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writeDescriptorSet.dstSet = modelDescriptorSets[i];
+                writeDescriptorSet.dstBinding = shaderBufferInfo.binding;
+                writeDescriptorSet.dstArrayElement = 0;
+                writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                writeDescriptorSet.descriptorCount = 1;
+                writeDescriptorSet.pBufferInfo = &bufferInfo;
+                descriptorWrites.push_back(writeDescriptorSet);
+            }
+
+            // テクスチャ
+            if (fragmentShaderResourceInfo.hasSamplerResource) {
+                VkWriteDescriptorSet writeDescriptorSet{};
+                auto textureInfo = fragmentShaderResourceInfo._textureInfos[0];
+                writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writeDescriptorSet.dstSet = modelDescriptorSets[i];
+                writeDescriptorSet.dstBinding = textureInfo.binding;
+                writeDescriptorSet.dstArrayElement = 0;
+                writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                writeDescriptorSet.descriptorCount = 1;
+                VkDescriptorImageInfo imageInfo{};
+                imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                imageInfo.imageView = textureCreator->GetInvalidTextureImageView(); // 最初は無効なテクスチャ
+                imageInfo.sampler = textureCreator->GetInvalidTextureSampler();
+                writeDescriptorSet.pImageInfo = &imageInfo;
+                descriptorWrites.push_back(writeDescriptorSet);
+            }
+
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        }
+    }
+};
+
+/// <summary>
+/// 値の更新を実際にシェーダに反映する処理
+/// </summary>
+/// <remarks>
+/// 名前とかで何番目の値なのか覚えておいて、反映するタイミングでMap,Unmapをする
+/// </remarks>
+class ShaderPropertyApplier
+{
 private:
+    ShaderCPUResource* shaderCPUResource;
+    ShaderResourceInfo vertexShaderResoureInfo;
+    ShaderResourceInfo fragmentShaderResourceInfo;
+
+	std::unordered_map<std::string, float> _floatMap;
+    std::unordered_map<std::string, glm::vec3> _vec3Map;
+    std::unordered_map<std::string, glm::mat4x4> _matrixMap;
+
+public:
+    ShaderPropertyApplier(ShaderCPUResource* shaderCPUResource)
+        : shaderCPUResource(shaderCPUResource)
+    {
+		this->vertexShaderResoureInfo = shaderCPUResource->VertexShaderResourceInfo();
+		this->fragmentShaderResourceInfo = shaderCPUResource->FragmentShaderResourceInfo();
+        _matrixMap["view"] = glm::mat4x4(1.0f);
+        _matrixMap["proj"] = glm::mat4x4(1.0f);
+        _matrixMap["model"] = glm::mat4x4(1.0f);
+    }
+
+    void SetVector3(const std::string& name, const glm::vec3 vec3)
+    {
+        _vec3Map[name] = vec3;
+    }
+
+    void SetMatrix4x4(const std::string& name, const glm::mat4x4 matrix)
+    {
+        _matrixMap[name] = matrix;
+    }
+
+    void Apply(int frameIndex)
+    {
+		// カメラ行列更新
+		char* dstPtr = static_cast<char*>(shaderCPUResource->CameraUniformBuffersMapped(frameIndex));
+		auto bufferInfo = vertexShaderResoureInfo._bufferInfos[0]; // TODO 0番目がカメラ用のバッファとは限らない
+		ApplyBuffer(dstPtr, bufferInfo, frameIndex);
+
+        // モデル行列更新
+        dstPtr = static_cast<char*>(shaderCPUResource->ModelUniformBuffersMapped(frameIndex));
+		auto modelBufferInfo = vertexShaderResoureInfo._bufferInfos[1];
+		ApplyBuffer(dstPtr, modelBufferInfo, frameIndex);
+
+        // TODO 差分だけApplyするとかできたら最適化になりそう
+    }
+
+private :
+    void ApplyBuffer(char* ptr, const ShaderBufferInfo bufferInfo, int frameIndex)
+    {
+        for (auto propertyInfo : bufferInfo._propertyInfos)
+        {
+			auto floatValue = _floatMap.find(propertyInfo.name);
+            if (floatValue != _floatMap.end())
+            {
+                memcpy(ptr + propertyInfo.offset, &_floatMap[propertyInfo.name], propertyInfo.size);
+			}
+
+            auto matrix = _matrixMap.find(propertyInfo.name);
+            if (matrix != _matrixMap.end())
+            {
+                memcpy(ptr + propertyInfo.offset, &_matrixMap[propertyInfo.name], propertyInfo.size);
+            }
+
+			auto vec3 = _vec3Map.find(propertyInfo.name);
+            if (vec3 != _vec3Map.end())
+            {
+                memcpy(ptr + propertyInfo.offset, &_vec3Map[propertyInfo.name], propertyInfo.size);
+            }
+        }
+	}
+};
+
+class HelloTriangleApplication
+{
+public :
+    void run() {
+
+        initWindow();
+        initVulkan();
+        auto swapChainExtent = vulkanSwapChain->GetSwapChainExtent();
+        camera.position = glm::vec3(2.0f, 2.0f, 2.0f);
+        camera.lookat = glm::vec3(0.0f, 0.0f, 0.0f);
+        camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+        camera.fov = 45.0f;
+        camera.aspect = swapChainExtent.width / (float)swapChainExtent.height;
+        camera.nearClip = 0.1f;
+        camera.farClip = 10.0f;
+        mainLoop();
+        cleanup();
+    }
+
+private:
+    ShaderCPUResource* shaderCPUResource;
+
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
     const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -389,8 +597,6 @@ private:
     VkShaderModule vertShaderModule;
     VkShaderModule fragShaderModule;
 
-    VkDescriptorSetLayout cameraDescriptorSetLayout;
-    VkDescriptorSetLayout modelDescriptorSetLayout;
 
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
@@ -408,29 +614,14 @@ private:
     VkDeviceMemory vertexAndIndexBufferMemory;
     VkDeviceSize indexBufferOffset;
 
-    std::vector<VkBuffer> cameraUniformBuffers;
-    std::vector<VkDeviceMemory> cameraUniformBufferMemories;
-    std::vector<void*> cameraUniformBuffersMapped;
-
-    std::vector<VkBuffer> modelUniformBuffers;
-    std::vector<VkDeviceMemory> modelUniformBuffersMemories;
-    std::vector<void*> modelUniformBuffersMapped;
-
 	ShaderPropertyApplier* shaderPropertyApplier;
 
     VkDescriptorPool descriptorPool;
-    std::vector<VkDescriptorSet> cameraDescriptorSets;
-    std::vector<VkDescriptorSet> modelDescriptorSets;
 
     VkImage textureImage;
     VkDeviceMemory textureImageMemory;
     VkImageView textureImageView;
     VkSampler textureSampler;
-
-    VkImage invalidTextureImage;
-	VkDeviceMemory invalidTextureImageMemory;
-	VkImageView invalidTextureImageView;
-	VkSampler invalidTextureSampler;
 
     uint32_t currentFrame = 0;
 
@@ -485,11 +676,11 @@ private:
         // SwapChainの作成(ImageViewとかデプスとかも)
         vulkanSwapChain->Initialize(surface, surfaceFormat, renderPass);
 
-        auto vertexShaderResourceInfo = ShaderReflect("shaders/vert.spv");
-		auto fragmentShaderResourceInfo = ShaderReflect("shaders/frag.spv");
+        // DescriptorPoolとDescriptorSetの作成
+        descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT * 2); // DescriptorSetsはCamera用とModel用で2種類あるので、2倍の数を作成する必要がある
 
-        cameraDescriptorSetLayout = createCameraDescriptorSetLayout(logicalDevice);
-        modelDescriptorSetLayout = createModelDescriptorSetLayout(vertexShaderResourceInfo, fragmentShaderResourceInfo, logicalDevice);
+        shaderCPUResource = new ShaderCPUResource(logicalDevice, bufferCreator, textureCreator, vulkanResources, descriptorPool, MAX_FRAMES_IN_FLIGHT);
+        shaderPropertyApplier = new ShaderPropertyApplier(shaderCPUResource);
 
         // CommandPool、CommandBufferの作成
         commandPool = vulkanCommandBuffer->createCommandPool(graphicsQueueFamilyIndicies, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -499,7 +690,7 @@ private:
         // シェーダモジュールとグラフィックスパイプラインの作成
         vertShaderModule = vulkanResources->createShaderModule("shaders/vert.spv");
         fragShaderModule = vulkanResources->createShaderModule("shaders/frag.spv");
-        std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { cameraDescriptorSetLayout, modelDescriptorSetLayout };
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { shaderCPUResource->CameraDescriptorSetLayout(), shaderCPUResource->ModelDescriptorSetLayout()};
         graphicsPipeline = createGraphicsPipeline(renderPass, descriptorSetLayouts, vertShaderModule, fragShaderModule);
 
         modelLoader = new ModelLoaderAssimp();
@@ -507,104 +698,10 @@ private:
         mesh = modelLoader->loadModel("Assets/viking_room.obj");
         vertexAndIndexBuffer = bufferCreator->createVertexAndIndexBuffer(mesh->vertices, mesh->indices, indexBufferOffset, vertexAndIndexBufferMemory);
 
-		// Uniform Bufferの作成
-        int cameraBufferIndex = 0; // TODO バッファの並び順は決まってないので、ShaderReflectで取得した情報をもとにどのバッファがカメラ用でどのバッファがモデル用かを判断する必要がある
-		int modelBufferIndex = 1;
-		auto cameraBufferInfo = vertexShaderResourceInfo._bufferInfos[cameraBufferIndex];
-		auto modelBufferInfo = vertexShaderResourceInfo._bufferInfos[modelBufferIndex];
-        VkDeviceSize cameraBufferSize = cameraBufferInfo.bufferSize;
-        cameraUniformBuffers = bufferCreator->createUniformBuffers(cameraBufferSize, MAX_FRAMES_IN_FLIGHT, cameraUniformBufferMemories, cameraUniformBuffersMapped);
-
-        VkDeviceSize modelBufferSize = modelBufferInfo.bufferSize; 
-        modelUniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize, MAX_FRAMES_IN_FLIGHT, modelUniformBuffersMemories, modelUniformBuffersMapped);
-
         // テクスチャの作成
         textureImage = textureCreator->createTextureImage("Assets/viking_room.png", textureImageMemory);
         textureImageView = vulkanResources->createImageView2D(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
         textureSampler = textureCreator->createTextureSampler(deviceMaxAnisotropy);
-
-        // 無効なテクスチャの作成
-		invalidTextureImage = textureCreator->createTextureImage("Assets/Embedded/white.png", invalidTextureImageMemory);
-		invalidTextureImageView = vulkanResources->createImageView2D(invalidTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-		invalidTextureSampler = textureCreator->createTextureSampler(deviceMaxAnisotropy);
-
-		// DescriptorPoolとDescriptorSetの作成
-		descriptorPool = createDescriptorPool(logicalDevice, MAX_FRAMES_IN_FLIGHT * 2); // DescriptorSetsはCamera用とModel用で2種類あるので、2倍の数を作成する必要がある
-        cameraDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, cameraDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
-        modelDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, modelDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
-
-		// バッファとテクスチャとDescriptorSetsの紐づけ
-        updateCameraDescriptorSets(cameraUniformBuffers, cameraBufferInfo, 0, cameraDescriptorSets);
-        updateModelDescriptorSets(modelUniformBuffers, vertexShaderResourceInfo, fragmentShaderResourceInfo, modelBufferSize, modelDescriptorSets);
-
-        ShaderCPUResource shaderCPUResource = ShaderCPUResource(cameraDescriptorSets[0], modelDescriptorSets[0],
-            cameraUniformBuffers, cameraUniformBufferMemories, cameraUniformBuffersMapped,
-            modelUniformBuffers, modelUniformBuffersMemories, modelUniformBuffersMapped);
-
-        shaderPropertyApplier = new ShaderPropertyApplier(shaderCPUResource, vertexShaderResourceInfo, fragmentShaderResourceInfo);
-    }
-
-    void updateCameraDescriptorSets(const std::vector<VkBuffer> uniformBuffers, const ShaderBufferInfo shaderBufferInfo, const VkDeviceSize offset, const std::vector<VkDescriptorSet> uniformDescriptorSets)
-    {
-        size_t bufferCount = uniformBuffers.size();
-        for (size_t i = 0; i < bufferCount; i++)
-        {
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = uniformBuffers[i];
-            bufferInfo.offset = offset;
-            bufferInfo.range = shaderBufferInfo.bufferSize;
-
-            VkWriteDescriptorSet descriptorWrites{};
-            descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites.dstSet = uniformDescriptorSets[i];
-            descriptorWrites.dstBinding = 0;
-            descriptorWrites.dstArrayElement = 0;
-            descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrites.descriptorCount = 1;
-            descriptorWrites.pBufferInfo = &bufferInfo;
-            descriptorWrites.pImageInfo = nullptr; // Optional
-            descriptorWrites.pTexelBufferView = nullptr; // Optional
-            vkUpdateDescriptorSets(logicalDevice, 1, &descriptorWrites, 0, nullptr);
-        }
-    }
-
-    void updateModelDescriptorSets(const std::vector<VkBuffer> modelUniformBuffers, ShaderResourceInfo vertexShaderResourceInfo, ShaderResourceInfo fragmentShaderResourceInfo, const VkDeviceSize range, const std::vector<VkDescriptorSet> modelDescriptorSets)
-    {
-        size_t bufferCount = modelUniformBuffers.size();
-        for (size_t i = 0; i < bufferCount; i++)
-        {
-            std::vector<VkWriteDescriptorSet> descriptorWrites(bufferCount);
-
-            // バッファ
-			auto shaderBufferInfo = vertexShaderResourceInfo._bufferInfos[1]; // TODO 1番目がモデル用のバッファとは限らないので、ShaderReflectで取得した情報をもとにどのバッファがモデル用かを判断する必要がある
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = modelUniformBuffers[i];
-            bufferInfo.offset = 0;
-            bufferInfo.range = shaderBufferInfo.bufferSize;
-            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[0].dstSet = modelDescriptorSets[i];
-            descriptorWrites[0].dstBinding = shaderBufferInfo.binding;
-            descriptorWrites[0].dstArrayElement = 0;
-            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrites[0].descriptorCount = 1;
-            descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-            // テクスチャ
-            auto textureInfo = fragmentShaderResourceInfo._textureInfos[0];
-            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[1].dstSet = modelDescriptorSets[i];
-            descriptorWrites[1].dstBinding = textureInfo.binding;
-            descriptorWrites[1].dstArrayElement = 0;
-            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrites[1].descriptorCount = 1;
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = invalidTextureImageView; // 最初は無効なテクスチャ
-            imageInfo.sampler = invalidTextureSampler;
-            descriptorWrites[1].pImageInfo = &imageInfo;
-
-            vkUpdateDescriptorSets(logicalDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-        }
     }
 
     /// <summary>
@@ -613,7 +710,7 @@ private:
     /// <param name="modelUniformBuffers"></param>
     /// <param name="imageInfo"></param>
     /// <param name="modelDescriptorSets"></param>
-    void updateImageDescriptorSets(const int bufferCount, const VkDescriptorImageInfo imageInfo, const std::vector<VkDescriptorSet> modelDescriptorSets)
+    void updateImageDescriptorSets(const int bufferCount, const ShaderCPUResource* shaderResource, const VkDescriptorImageInfo imageInfo)
     {
         for (size_t i = 0; i < bufferCount; i++)
         {
@@ -624,7 +721,7 @@ private:
 
             // image更新
             descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[0].dstSet = modelDescriptorSets[i];
+            descriptorWrites[0].dstSet = *shaderResource->ModelDescriptorSet(i);
             descriptorWrites[0].dstBinding = 1;
             descriptorWrites[0].dstArrayElement = 0;
             descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -656,8 +753,8 @@ private:
         auto swapChainExtent = vulkanSwapChain->GetSwapChainExtent();
 
         // Uniform Bufferの更新
-        updateCameraUniformBuffers(cameraUniformBuffersMapped, 0, frameIndex, camera);
-        updateModelUniformBuffers(modelUniformBuffersMapped, 0, frameIndex);
+        updateCameraUniformBuffers(shaderPropertyApplier, camera);
+        updateModelUniformBuffers(shaderPropertyApplier);
         shaderPropertyApplier->Apply(frameIndex);
 
         // SwapChainが古くなっている場合は再作成する
@@ -672,13 +769,17 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
+		// しばらくたったらテクスチャを差し替える
         if (currentFrame == 2000)
         {
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             imageInfo.imageView = textureImageView;
             imageInfo.sampler = textureSampler;
-            updateImageDescriptorSets(MAX_FRAMES_IN_FLIGHT, imageInfo, modelDescriptorSets);
+            updateImageDescriptorSets(MAX_FRAMES_IN_FLIGHT, shaderCPUResource, imageInfo);
+
+            shaderPropertyApplier->SetVector3("color", glm::vec3(0,1,1));
+
         }
         vkResetFences(logicalDevice, 1, &inFlightFences[frameIndex]);
 
@@ -726,7 +827,7 @@ private:
         }
     }
 
-    void updateCameraUniformBuffers(const std::vector<void*> uniformBufferMapped, const size_t offset, const uint32_t frameIndex, const Camera& camera)
+    void updateCameraUniformBuffers(ShaderPropertyApplier* shaderPropertyApplier, const Camera& camera)
     {
         auto view = glm::lookAt(camera.position, camera.lookat, camera.up);
         auto proj = glm::perspective(glm::radians(camera.fov), camera.aspect, camera.nearClip, camera.farClip);
@@ -735,7 +836,7 @@ private:
 		shaderPropertyApplier->SetMatrix4x4("proj", proj);
     }
 
-    void updateModelUniformBuffers(const std::vector<void*> uniformBufferMapped, const size_t offset, const uint32_t frameIndex)
+    void updateModelUniformBuffers(ShaderPropertyApplier* shaderPropertyApplier)
     {
         static auto startTime = std::chrono::high_resolution_clock::now();
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -788,8 +889,8 @@ private:
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &cameraDescriptorSets[frameIndex], 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &modelDescriptorSets[frameIndex], 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, shaderCPUResource->CameraDescriptorSet(frameIndex), 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, shaderCPUResource->ModelDescriptorSet(frameIndex), 0, nullptr);
 
         VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
         VkDeviceSize offsets[] = { 0 };
@@ -823,22 +924,16 @@ private:
 
         vkDestroyImage(logicalDevice, textureImage, nullptr);
         vkFreeMemory(logicalDevice, textureImageMemory, nullptr);
-		vkDestroyImage(logicalDevice, invalidTextureImage, nullptr);
-		vkFreeMemory(logicalDevice, invalidTextureImageMemory, nullptr);
 
-        vkDestroyDescriptorSetLayout(logicalDevice, modelDescriptorSetLayout, nullptr);
-        vkDestroyDescriptorSetLayout(logicalDevice, cameraDescriptorSetLayout, nullptr);
+      
         vkDestroyDescriptorPool(logicalDevice, descriptorPool, nullptr); // DescriptorSetsはDescriptorPoolと一緒に破棄されるので個別に破棄する必要はない
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroyBuffer(logicalDevice, cameraUniformBuffers[i], nullptr);
-            vkFreeMemory(logicalDevice, cameraUniformBufferMemories[i], nullptr);
-            vkDestroyBuffer(logicalDevice, modelUniformBuffers[i], nullptr);
-            vkFreeMemory(logicalDevice, modelUniformBuffersMemories[i], nullptr);
-        }
 
         vkDestroyBuffer(logicalDevice, vertexAndIndexBuffer, nullptr);
         vkFreeMemory(logicalDevice, vertexAndIndexBufferMemory, nullptr);
+
+        shaderCPUResource->Release(logicalDevice);
+        delete shaderCPUResource;
+        delete shaderPropertyApplier;
 
         destroySyncObjects();
 
@@ -853,6 +948,7 @@ private:
         vkDestroyShaderModule(logicalDevice, vertShaderModule, nullptr);
 
         delete vulkanResources;
+		vulkanResources = nullptr;
         vulkanFacade.CleanupVulkan();
 
         glfwDestroyWindow(window);
@@ -1150,65 +1246,6 @@ private:
 #pragma endregion
 
 #pragma region ディスクリプタ
-    VkDescriptorSetLayout createCameraDescriptorSetLayout(const VkDevice device)
-    {
-        VkDescriptorSetLayoutBinding uboLayoutBinding{};
-        uboLayoutBinding.binding = 0;
-        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboLayoutBinding.descriptorCount = 1;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &uboLayoutBinding;
-
-        VkDescriptorSetLayout descriptorSetLayout;
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create descriptor set layout!");
-        }
-
-        return descriptorSetLayout;
-    }
-
-    VkDescriptorSetLayout createModelDescriptorSetLayout(const ShaderResourceInfo vertexShaderResourceInfo, const ShaderResourceInfo fragmentShaderResourceInfo, const VkDevice device)
-    {
-        std::vector<VkDescriptorSetLayoutBinding> bindings{};
-        if (vertexShaderResourceInfo.hasBufferResource) {
-            VkDescriptorSetLayoutBinding uboLayoutBinding{};
-            uboLayoutBinding.binding = 0;
-            uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            uboLayoutBinding.descriptorCount = 1; // 1でも問題ない...か？
-            uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-            uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-            bindings.push_back(uboLayoutBinding);
-        }
-
-        // TODO フラグメントシェーダでしかテクスチャを使うことはほぼないのでこれで問題ないが、両方でテクスチャを使う場合もあるかも
-        if (fragmentShaderResourceInfo.hasSamplerResource)
-        {
-            VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-            samplerLayoutBinding.binding = 1;
-            samplerLayoutBinding.descriptorCount = 1;
-            samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            samplerLayoutBinding.pImmutableSamplers = nullptr;
-            samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-            bindings.push_back(samplerLayoutBinding);
-        }
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = bindings.size();
-        layoutInfo.pBindings = bindings.data();
-
-        VkDescriptorSetLayout descriptorSetLayout;
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create descriptor set layout!");
-        }
-
-        return descriptorSetLayout;
-    }
-
     VkDescriptorPool createDescriptorPool(const VkDevice device, const size_t maxSets)
     {
         std::array< VkDescriptorPoolSize, 2> poolSizes{};
@@ -1230,24 +1267,6 @@ private:
         return descriptorPool;
     }
 
-    std::vector<VkDescriptorSet> createDescriptorSets(const VkDevice device, const VkDescriptorPool descriptorPool, const VkDescriptorSetLayout descriptorSetLayout, const uint32_t descriptorCount)
-    {
-        std::vector<VkDescriptorSetLayout> layouts(descriptorCount, descriptorSetLayout);
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(descriptorCount);
-        allocInfo.pSetLayouts = layouts.data();
-
-        std::vector<VkDescriptorSet> modelDescriptorSets(descriptorCount);
-        auto result = vkAllocateDescriptorSets(device, &allocInfo, modelDescriptorSets.data());
-
-        if (result != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate descriptor sets!");
-        }
-
-        return modelDescriptorSets;
-    }
 #pragma endregion
 
 #pragma region 同期オブジェクト

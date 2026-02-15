@@ -13,7 +13,7 @@ private:
     VkDevice device;
     VulkanCommandBuffer* commandBuffer;
 
-    uint32_t findMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties);
+    const uint32_t findMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties) const;
 
     VkDeviceSize alignIndexBufferOffset(VkDeviceSize offset, VkPhysicalDevice physicalDevice);
 
@@ -26,8 +26,8 @@ public:
     VkBuffer createIndexBuffer(const std::vector<uint16_t> indices, VkDeviceMemory& bufferMemory);
     VkBuffer createVertexAndIndexBuffer(const std::vector<Vertex> vertices, const std::vector<uint16_t> indices, VkDeviceSize& indexBufferOffset, VkDeviceMemory& bufferMemory);
 
-    std::vector<VkBuffer> createUniformBuffers(const VkDeviceSize bufferSize, const size_t bufferCount, std::vector<VkDeviceMemory>& uniformBufferMemories, std::vector<void*>& bufferMapped);
+    const std::vector<VkBuffer> createUniformBuffers(const VkDeviceSize bufferSize, const size_t bufferCount, std::vector<VkDeviceMemory>& uniformBufferMemories, std::vector<void*>& bufferMapped) const;
 
-    VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& bufferMemory);
+    const VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& bufferMemory) const;
 };
 

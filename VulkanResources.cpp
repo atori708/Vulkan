@@ -1,10 +1,12 @@
 ﻿#include "VulkanResources.h"
 #include "VulkanResourceUtility.h"
 
-VulkanResources::VulkanResources(VkDevice device)
+VulkanResources::VulkanResources(const VkDevice device)
 {
     this->device = device;
 }
+
+    
 
 #pragma region シェーダ
 VkShaderModule VulkanResources::createShaderModule(const std::string& filename) {
