@@ -1,5 +1,6 @@
 #version 450
 
+// binding 0は頂点シェーダーで使用するため、フラグメントシェーダーではbinding 1を使用
 layout(set = 1, binding = 1) uniform sampler2D texSampler;
 
 layout(location = 0) in vec3 fragColor;
