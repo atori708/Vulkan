@@ -116,6 +116,56 @@ struct ShaderResourceInfo {
     std::vector<ShaderTextureInfo> _textureInfos;
 };
 
+
+class ShaderCPUResource
+{
+    VkDescriptorSet cameraDescriptorSet;
+    VkDescriptorSet modelDescriptorSet;
+
+    std::vector<VkBuffer> cameraUniformBuffers;
+    std::vector<VkDeviceMemory> cameraUniformBufferMemories;
+    std::vector<void*> cameraUniformBuffersMapped;
+
+    std::vector<VkBuffer> modelUniformBuffers;
+    std::vector<VkDeviceMemory> modelUniformBuffersMemories;
+    std::vector<void*> modelUniformBuffersMapped;
+
+public:
+    ShaderCPUResource(VkDescriptorSet cameraDescriptorSet,
+        VkDescriptorSet modelDescriptorSet,
+        std::vector<VkBuffer>& cameraUniformBuffers,
+        std::vector<VkDeviceMemory>& cameraUniformBuffersMemories,
+        std::vector<void*>& cameraUniformBuffersMapped,
+        std::vector<VkBuffer>& modelUniformBuffers,
+        std::vector<VkDeviceMemory>& modelUniformBuffersMemories,
+        std::vector<void*>& modelUniformBuffersMapped
+    )
+        : cameraDescriptorSet(cameraDescriptorSet), modelDescriptorSet(modelDescriptorSet),
+        cameraUniformBuffers(cameraUniformBuffers), cameraUniformBufferMemories(cameraUniformBuffersMemories), cameraUniformBuffersMapped(cameraUniformBuffersMapped),
+        modelUniformBuffers(modelUniformBuffers), modelUniformBuffersMemories(modelUniformBuffersMemories), modelUniformBuffersMapped(modelUniformBuffersMapped)
+    {
+    }
+
+    const VkBuffer CameraUniformBuffers(int frameIndex) const {
+        return cameraUniformBuffers[frameIndex];
+    }
+    void* CameraUniformBuffersMapped(int frameIndex) {
+        return cameraUniformBuffersMapped[frameIndex];
+    }
+    const std::vector<VkBuffer> ModelUniformBuffers() const {
+        return modelUniformBuffers;
+    }
+    void* ModelUniformBuffersMapped(int frameIndex){
+        return modelUniformBuffersMapped[frameIndex];
+    }
+    const VkDescriptorSet CameraDescriptorSet() const {
+        return cameraDescriptorSet;
+    }
+    const VkDescriptorSet ModelDescriptorSet() const {
+        return modelDescriptorSet;
+    }
+};
+
 /// <summary>
 /// 値の更新を実際にシェーダに反映する処理
 /// </summary>
@@ -125,34 +175,20 @@ struct ShaderResourceInfo {
 class ShaderPropertyApplier
 {
 private:
-  ShaderResourceInfo vertexShaderResoureInfo;
-  ShaderResourceInfo fragmentShaderResourceInfo;
+    ShaderCPUResource shaderCPUResource;
+    ShaderResourceInfo vertexShaderResoureInfo;
+    ShaderResourceInfo fragmentShaderResourceInfo;
 
-  VkDescriptorSet cameraDescriptorSet;
-  VkDescriptorSet modelDescriptorSet;
-
-  std::vector<VkBuffer> cameraUniformBuffers;
-  std::vector<VkDeviceMemory> cameraUniformBufferMemories;
-  std::vector<void*> cameraUniformBuffersMapped;
-
-  std::vector<VkBuffer> modelUniformBuffers;
-  std::vector<VkDeviceMemory> modelUniformBuffersMemories;
-  std::vector<void*> modelUniformBuffersMapped;
-
-  std::unordered_map<std::string, glm::mat4x4> _matrixMap;
+    std::unordered_map<std::string, glm::mat4x4> _matrixMap;
 
 public:
-    ShaderPropertyApplier(std::vector<VkBuffer> modelUniformBuffers,
-        std::vector<VkDeviceMemory> modelUniformBuffersMemories,
-        std::vector<void*> modelUniformBuffersMapped,
-        ShaderResourceInfo vertexShaderResoureInfo,
-        ShaderResourceInfo fragmentShaderResourceInfo)
-		: modelUniformBuffers(modelUniformBuffers), modelUniformBuffersMemories(modelUniformBuffersMemories), modelUniformBuffersMapped(modelUniformBuffersMapped), vertexShaderResoureInfo(vertexShaderResoureInfo), fragmentShaderResourceInfo(fragmentShaderResourceInfo)
+    ShaderPropertyApplier(ShaderCPUResource shaderCPUResource, ShaderResourceInfo vertexShaderResoureInfo, ShaderResourceInfo fragmentShaderResourceInfo)
+        : shaderCPUResource(shaderCPUResource), vertexShaderResoureInfo(vertexShaderResoureInfo), fragmentShaderResourceInfo(fragmentShaderResourceInfo)
     {
-		_matrixMap["view"] = glm::mat4x4(1.0f);
-		_matrixMap["proj"] = glm::mat4x4(1.0f);
-		_matrixMap["model"] = glm::mat4x4(1.0f);
-	}
+        _matrixMap["view"] = glm::mat4x4(1.0f);
+        _matrixMap["proj"] = glm::mat4x4(1.0f);
+        _matrixMap["model"] = glm::mat4x4(1.0f);
+    }
 
     void SetMatrix4x4(const std::string& name, const glm::mat4x4 matrix) {
 		_matrixMap[name] = matrix;
@@ -160,12 +196,16 @@ public:
 
     void Apply(int frameIndex)
     {
+		char* dstPtr = static_cast<char*>(shaderCPUResource.CameraUniformBuffersMapped(frameIndex));
 		auto viewMatrix = _matrixMap["view"];
         auto projMatrix = _matrixMap["proj"];
+		memcpy(dstPtr, &viewMatrix, sizeof(viewMatrix)); // ここのサイズとかはShaderResourceInfoから取得して、適切なオフセットに書き込む必要がある
+		memcpy(dstPtr + sizeof(viewMatrix), &projMatrix, sizeof(projMatrix));
+
         // モデル行列更新
 		auto modelMatrix = _matrixMap["model"];
-        char* dstPtr = static_cast<char*>(modelUniformBuffersMapped[frameIndex]);
-		memcpy(dstPtr, &modelMatrix, sizeof(modelMatrix)); // 個々のサイズとかはShaderResourceInfoから取得して、適切なオフセットに書き込む必要がある
+        dstPtr = static_cast<char*>(shaderCPUResource.ModelUniformBuffersMapped(frameIndex));
+		memcpy(dstPtr, &modelMatrix, sizeof(modelMatrix)); // ここのサイズとかはShaderResourceInfoから取得して、適切なオフセットに書き込む必要がある
     }
 };
 
@@ -458,7 +498,6 @@ private:
         VkDeviceSize modelBufferSize = modelBufferInfo.bufferSize; 
         modelUniformBuffers = bufferCreator->createUniformBuffers(modelBufferSize, MAX_FRAMES_IN_FLIGHT, modelUniformBuffersMemories, modelUniformBuffersMapped);
 
-
         // テクスチャの作成
         textureImage = textureCreator->createTextureImage("Assets/viking_room.png", textureImageMemory);
         textureImageView = vulkanResources->createImageView2D(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -469,12 +508,6 @@ private:
         cameraDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, cameraDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
         modelDescriptorSets = createDescriptorSets(logicalDevice, descriptorPool, modelDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
 
-		shaderPropertyApplier = new ShaderPropertyApplier(modelUniformBuffers,
-            modelUniformBuffersMemories, 
-            modelUniformBuffersMapped, 
-            vertexShaderResourceInfo, 
-            fragmentShaderResourceInfo);
-
 		// バッファとテクスチャとDescriptorSetsの紐づけ
         updateCameraDescriptorSets(cameraUniformBuffers, cameraBufferInfo, 0, cameraDescriptorSets);
 
@@ -483,6 +516,12 @@ private:
         imageInfo.imageView = textureImageView;
         imageInfo.sampler = textureSampler;
         updateModelDescriptorSets(modelUniformBuffers, 0, modelBufferSize, imageInfo, modelDescriptorSets);
+
+        ShaderCPUResource shaderCPUResource = ShaderCPUResource(cameraDescriptorSets[0], modelDescriptorSets[0],
+            cameraUniformBuffers, cameraUniformBufferMemories, cameraUniformBuffersMapped,
+            modelUniformBuffers, modelUniformBuffersMemories, modelUniformBuffersMapped);
+
+        shaderPropertyApplier = new ShaderPropertyApplier(shaderCPUResource, vertexShaderResourceInfo, fragmentShaderResourceInfo);
     }
 
     void updateCameraDescriptorSets(const std::vector<VkBuffer> uniformBuffers, const ShaderBufferInfo shaderBufferInfo, const VkDeviceSize offset, const std::vector<VkDescriptorSet> uniformDescriptorSets)
@@ -565,6 +604,7 @@ private:
         // Uniform Bufferの更新
         updateCameraUniformBuffers(cameraUniformBuffersMapped, 0, frameIndex, camera);
         updateModelUniformBuffers(modelUniformBuffersMapped, 0, frameIndex);
+        shaderPropertyApplier->Apply(frameIndex);
 
         // SwapChainが古くなっている場合は再作成する
         uint32_t imageIndex;
@@ -630,8 +670,8 @@ private:
         cubo.view = glm::lookAt(camera.position, camera.lookat, camera.up);
         cubo.proj = glm::perspective(glm::radians(camera.fov), camera.aspect, camera.nearClip, camera.farClip);
         cubo.proj[1][1] *= -1; // GLMはY座標が反転しているので、Vulkanに合わせて反転する
-        char* dstPtr = static_cast<char*>(uniformBufferMapped[frameIndex]) + offset;
-        memcpy(dstPtr, &cubo, sizeof(cubo));
+		shaderPropertyApplier->SetMatrix4x4("view", cubo.view); // 毎フレーム更新する値はShaderPropertyApplierにセットしておいて、ApplyのタイミングでまとめてUniform Bufferに反映させる
+		shaderPropertyApplier->SetMatrix4x4("proj", cubo.proj); // 毎フレーム更新する値はShaderPropertyApplierにセットしておいて、ApplyのタイミングでまとめてUniform Bufferに反映させる
     }
 
     void updateModelUniformBuffers(const std::vector<void*> uniformBufferMapped, const size_t offset, const uint32_t frameIndex)
@@ -645,10 +685,6 @@ private:
         // 回転させる
         ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		shaderPropertyApplier->SetMatrix4x4("model", ubo.model); // 毎フレーム更新する値はShaderPropertyApplierにセットしておいて、ApplyのタイミングでまとめてUniform Bufferに反映させる
-        /*char* dstPtr = static_cast<char*>(uniformBufferMapped[frameIndex]) + offset;
-        memcpy(dstPtr, &ubo, sizeof(ubo));*/
-
-		shaderPropertyApplier->Apply(frameIndex);
     }
 
     void recordCommandBuffer(uint32_t frameIndex, VkCommandBuffer commandBuffer, VkRenderPass renderPass, uint32_t swapChainBufferIndex, VkExtent2D swapChainExtent)
