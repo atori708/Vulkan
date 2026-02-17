@@ -31,6 +31,7 @@ VkImage VulkanResources::createImage(const VkPhysicalDevice physicalDevice, cons
     uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
     VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& imageMemory)
 {
+    // Imageの作成
     VkImage image;
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -50,9 +51,11 @@ VkImage VulkanResources::createImage(const VkPhysicalDevice physicalDevice, cons
         throw std::runtime_error("failed to create image!");
     }
 
+	// Imageのメモリ要求を取得し、メモリを割り当てる
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(device, image, &memRequirements);
 
+	// メモリの割り当て
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
@@ -61,7 +64,9 @@ VkImage VulkanResources::createImage(const VkPhysicalDevice physicalDevice, cons
         throw std::runtime_error("failed to allocate image memory!");
     }
 
+	// 割り当てたメモリをImageにバインドする
     vkBindImageMemory(device, image, imageMemory, 0);
+
     return image;
 }
 
