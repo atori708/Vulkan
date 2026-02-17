@@ -8,9 +8,22 @@ VulkanTextureCreator::VulkanTextureCreator(VkDevice device, VkPhysicalDevice phy
     this->vulkanResources = vulkanResources;
     this->commandBuffer = commandBuffer;
     this->deviceMaxAnisotropy = maxAnisotropy;
+
+	// 無効なテクスチャの作成
+    invalidTextureImage = createTextureImage("Assets/Embedded/white.png", invalidTextureImageMemory);
+	invalidTextureImageView = vulkanResources->createImageView2D(invalidTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+	invalidTextureSampler = createTextureSampler(deviceMaxAnisotropy);
 }
 
-VkImage VulkanTextureCreator::createTextureImage(const std::string texturePath, VkDeviceMemory& textureImageMemory)
+VulkanTextureCreator::~VulkanTextureCreator()
+{
+    vkDestroySampler(device, invalidTextureSampler, nullptr);
+    vkDestroyImageView(device, invalidTextureImageView, nullptr);
+    vkDestroyImage(device, invalidTextureImage, nullptr);
+    vkFreeMemory(device, invalidTextureImageMemory, nullptr);
+}
+
+const VkImage VulkanTextureCreator::createTextureImage(const std::string texturePath, VkDeviceMemory& textureImageMemory) const
 {
     // 画像読み込み
     int width, height, channels;
@@ -61,7 +74,7 @@ VkImage VulkanTextureCreator::createTextureImage(const std::string texturePath, 
 #pragma endregion
 
 #pragma region TextureSampler
-VkSampler VulkanTextureCreator::createTextureSampler(float anisotropy = 0)
+const VkSampler VulkanTextureCreator::createTextureSampler(float anisotropy = 0)const
 {
     if (anisotropy > deviceMaxAnisotropy) {
         anisotropy = deviceMaxAnisotropy;

@@ -4,3 +4,6 @@
 [submodule "Library/tinyobjloader"]
 	path = Library/tinyobjloader
 	url = https://github.com/tinyobjloader/tinyobjloader
+[submodule "Library/SPIRV-Cross"]
+	path = Library/SPIRV-Cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross

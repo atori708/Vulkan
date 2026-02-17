@@ -110,7 +110,7 @@ VkBuffer VulkanBufferCreator::createVertexAndIndexBuffer(const std::vector<Verte
     return vertexAndIndexBuffer;
 }
 
-std::vector<VkBuffer> VulkanBufferCreator::createUniformBuffers(const VkDeviceSize bufferSize, const size_t bufferCount, std::vector<VkDeviceMemory>& uniformBufferMemories, std::vector<void*>& bufferMapped)
+const std::vector<VkBuffer> VulkanBufferCreator::createUniformBuffers(const VkDeviceSize bufferSize, const size_t bufferCount, std::vector<VkDeviceMemory>& uniformBufferMemories, std::vector<void*>& bufferMapped) const
 {
     std::vector<VkBuffer> uniformBuffers(bufferCount);
     uniformBufferMemories.resize(bufferCount);
@@ -130,7 +130,7 @@ std::vector<VkBuffer> VulkanBufferCreator::createUniformBuffers(const VkDeviceSi
 }
 
 
-VkBuffer VulkanBufferCreator::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& bufferMemory) {
+const VkBuffer VulkanBufferCreator::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& bufferMemory) const{
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
@@ -159,7 +159,7 @@ VkBuffer VulkanBufferCreator::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags
     return buffer;
 }
 
-uint32_t VulkanBufferCreator::findMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties)
+const uint32_t VulkanBufferCreator::findMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties) const
 {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);

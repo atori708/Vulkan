@@ -104,13 +104,13 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)\Library\assimp\include;F:\work\library\VulkanSDK\1.4.321.1\Include;F:\work\library\glm;F:\work\library\glfw-3.4.bin.WIN64\include;F:\work\library\stb-master;$(SolutionDir)\Library\tinyobjloader;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)\Library\assimp\lib\$(Configuration);F:\work\library\VulkanSDK\1.4.321.1\Lib;F:\work\library\glfw-3.4.bin.WIN64\lib-vc2022;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;assimp-vc143-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;assimp-vc143-mtd.lib;spirv-cross-cd.lib;spirv-cross-cppd.lib;spirv-cross-cored.lib;spirv-cross-reflectd.lib;spirv-cross-glsld.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -137,6 +137,7 @@
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="ModelLoaderAssimp.cpp" />
     <ClCompile Include="ModelLoaderByTinyObjLoader.cpp" />
+    <ClCompile Include="ShaderCPUResources.cpp" />
     <ClCompile Include="VulkanBufferCreator.cpp" />
     <ClCompile Include="VulkanTextureCreator.cpp" />
     <ClCompile Include="VulkanCommandBuffer.cpp" />
@@ -157,6 +158,8 @@
     <ClInclude Include="MeshFormat.h" />
     <ClInclude Include="ModelLoaderAssimp.h" />
     <ClInclude Include="ModelLoaderByTinyObjLoader.h" />
+    <ClInclude Include="ShaderCPUResources.h" />
+    <ClInclude Include="ShaderPropertyApplier.h" />
     <ClInclude Include="VulkanBufferCreator.h" />
     <ClInclude Include="VulkanTextureCreator.h" />
     <ClInclude Include="VulkanCommandBuffer.h" />
