@@ -5,7 +5,7 @@
 
 #include "VulkanApp.h"
 
-class HelloTriangleApplication
+class App
 {
 public:
     void run() {
@@ -37,7 +37,7 @@ private:
 
     static void resizedFrameBufferCallback(GLFWwindow* window, int width, int height)
     {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
         app->OnWindowResized(width, height);
     }
 
@@ -76,7 +76,7 @@ private:
 };
 
 int main() {
-    HelloTriangleApplication app;
+    App app;
 
     try {
         app.run();
