@@ -1,4 +1,4 @@
-﻿#include "VulkanSwapChain.h"
+#include "VulkanSwapChain.h"
 #include "VulkanDevice.h"
 
 // TODO SwapChainがデプスとかを作ってるのはおかしいので、別のクラスに分ける
@@ -210,12 +210,12 @@ VkImageView VulkanSwapChain::createDepthResources(VkImage& depthImage, VkDeviceM
         depthImageMemory);
 
     depthImageView = resources->createImageView2D(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-    commandBuffer->transitionImageLayout(device, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    commandBuffer->TransitionImageLayoutOnce(device, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     return depthImageView;
 }
 
-VkFormat VulkanSwapChain::findDepthFormat()
+VkFormat VulkanSwapChain::findDepthFormat() const
 {
     return findSupportedFormat(
         physicalDevice,
@@ -228,7 +228,7 @@ VkFormat VulkanSwapChain::findDepthFormat()
 /// <summary>
 /// サポートしているフォーマットを<paramref name="candidates"/>の中から探す
 /// </summary>
-VkFormat VulkanSwapChain::findSupportedFormat(const VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
+VkFormat VulkanSwapChain::findSupportedFormat(const VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) const
 {
     for (VkFormat format : candidates)
     {

@@ -1,4 +1,4 @@
-﻿#include "VulkanTextureCreator.h"
+#include "VulkanTextureCreator.h"
 
 VulkanTextureCreator::VulkanTextureCreator(VkDevice device, VkPhysicalDevice physicalDevice, VulkanBufferCreator* bufferCreator, VulkanResources* vulkanResources, VulkanCommandBuffer* commandBuffer, float maxAnisotropy)
 {
@@ -60,11 +60,11 @@ const VkImage VulkanTextureCreator::createTextureImage(const std::string texture
         textureImageMemory);
 
     // StagingBufferからVkImageへ転送
-    commandBuffer->transitionImageLayout(device, textureImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    commandBuffer->TransitionImageLayoutOnce(device, textureImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     commandBuffer->copyBufferToImage(device, stagingBuffer, textureImage, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
     // シェーダから参照できるようにLayoutを変更
-    commandBuffer->transitionImageLayout(device, textureImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    commandBuffer->TransitionImageLayoutOnce(device, textureImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMemory, nullptr);

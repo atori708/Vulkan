@@ -1,6 +1,5 @@
-﻿#include "VulkanCommandBuffer.h"
+#include "VulkanCommandBuffer.h"
 #include <stdexcept>
-#include "VulkanResourceUtility.h"
 
 VulkanCommandBuffer::VulkanCommandBuffer(const VkInstance instance, const VkDevice device, const VkQueue graphicsQueue, const int maxFramesInFlight, const QueueFamilyIndices queueFamilyIndices)
 {
@@ -27,10 +26,17 @@ void VulkanCommandBuffer::Release()
     commandPools.clear();
 }
 
-
-void VulkanCommandBuffer::transitionImageLayout(const VkDevice device, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+void VulkanCommandBuffer::TransitionImageLayoutOnce(const VkDevice device, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
 {
     VkCommandBuffer commandBuffer = beginSingleTimeCommands(device, tempCommandPool);
+
+	this->TransitionImageLayout(commandBuffer, image, format, oldLayout, newLayout);
+
+    endSingleTimeCommands(device, tempCommandPool, commandBuffer);
+}
+
+void VulkanCommandBuffer::TransitionImageLayout(const VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -52,43 +58,17 @@ void VulkanCommandBuffer::transitionImageLayout(const VkDevice device, VkImage i
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     }
 
-    // 転送元・転送先のアクセスを設定(TODO よくわからんので、TutorialのImagesの項目参照
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    }
-    else {
-        throw std::invalid_argument("unsupported layout transition!");
-    }
+	BarrierInfo barrierInfo = GetBarrierInfo(oldLayout, newLayout);
+	barrier.srcAccessMask = barrierInfo.srcAccessMask;
+	barrier.dstAccessMask = barrierInfo.dstAccessMask;
 
     vkCmdPipelineBarrier(commandBuffer,
-        sourceStage, destinationStage,
+        barrierInfo.sourceStage, barrierInfo.destinationStage,
         0,
         0, nullptr,
         0, nullptr,
         1, &barrier
     );
-
-    endSingleTimeCommands(device, tempCommandPool, commandBuffer);
 }
 
 void VulkanCommandBuffer::copyBuffer(const VkDevice device, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)

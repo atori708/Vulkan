@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -38,9 +38,11 @@ private:
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
     std::vector<VkImageView> createSwapChainImageViews(std::vector<VkImage> swapChainImages);
 
-    VkFormat findSupportedFormat(const VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
     std::vector<VkFramebuffer> createSwapChainFramebuffers(const VkRenderPass renderPass, const std::vector<VkImageView> swapChainImageViews, const VkImageView depthImageView, const VkExtent2D swapChainExtent);
+
+    VkFormat findDepthFormat() const;
+    VkFormat findSupportedFormat(const VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)const;
 
 public:
     VulkanSwapChain(GLFWwindow* window, VkPhysicalDevice physicalDevice, VkDevice device, VulkanQueue* queue, VulkanCommandBuffer* commandBuffer, VulkanResources* resources);
@@ -53,11 +55,17 @@ public:
     void recreateSwapChain(const VkSurfaceKHR surface, const VkRenderPass renderPass, const VkExtent2D swapChainExtent);
     VkImageView createDepthResources(VkImage& depthImage, VkDeviceMemory& depthImageMemory);
 
-    VkFormat findDepthFormat();
 
     VkSwapchainKHR GetSwapChain() const { return swapChain; }
     VkExtent2D GetSwapChainExtent() const { return swapChainExtent; }
+
     VkFramebuffer GetFrameBuffer(int index) const { return swapChainFramebuffers[index]; }
-    VkFormat GetColorFormat() const { return swapChainImageFormat; }
+
+	VkImage GetColorImage(int index) const { return swapChainImages[index]; }
+	VkImageView GetColorImageView(int index) const { return swapChainImageViews[index]; }
+	VkImageView GetDepthImageView() const { return depthImageView; }
+
+    const VkFormat* GetColorFormat() const { return &swapChainImageFormat; }
+    VkFormat GetDepthFormat() const { return findDepthFormat(); }
 };
 
