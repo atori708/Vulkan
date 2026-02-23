@@ -141,7 +141,7 @@
     <ClCompile Include="VulkanBufferCreator.cpp" />
     <ClCompile Include="VulkanTextureCreator.cpp" />
     <ClCompile Include="VulkanCommandBuffer.cpp" />
-    <ClCompile Include="VulkanDevice.cpp" />
+    <ClCompile Include="VulkanContext.cpp" />
     <ClCompile Include="VulkanQueue.cpp" />
     <ClCompile Include="VulkanResources.cpp" />
     <ClCompile Include="VulkanResourceUtility.cpp" />
@@ -163,7 +163,7 @@
     <ClInclude Include="VulkanBufferCreator.h" />
     <ClInclude Include="VulkanTextureCreator.h" />
     <ClInclude Include="VulkanCommandBuffer.h" />
-    <ClInclude Include="VulkanDevice.h" />
+    <ClInclude Include="VulkanContext.h" />
     <ClInclude Include="VulkanQueue.h" />
     <ClInclude Include="VulkanResources.h" />
     <ClInclude Include="VulkanDefine.h" />

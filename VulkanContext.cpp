@@ -1,6 +1,6 @@
-﻿#include "VulkanDevice.h"
+#include "VulkanContext.h"
 
-void VulkanDevice::InitializeVulkan(GLFWwindow* window, VulkanQueue& queue)
+void VulkanContext::InitializeVulkan(GLFWwindow* window, VulkanQueue& queue)
 {
     this->queue = queue;
     instance = CreateInstance();
@@ -14,7 +14,7 @@ void VulkanDevice::InitializeVulkan(GLFWwindow* window, VulkanQueue& queue)
     vkGetDeviceQueue(logicalDevice, graphicsQueueFamilyIndicies.presentFamily.value(), 0, &presentQueue);
 }
 
-void VulkanDevice::CleanupVulkan()
+void VulkanContext::CleanupVulkan()
 {
     vkDestroyDevice(logicalDevice, nullptr);
     if (enableValidationLayers) {
@@ -27,7 +27,7 @@ void VulkanDevice::CleanupVulkan()
 /// <summary>
 /// サーフェスを作成する
 /// </summary>
-VkSurfaceKHR VulkanDevice::createSurface(GLFWwindow* window)
+VkSurfaceKHR VulkanContext::createSurface(GLFWwindow* window)
 {
     VkSurfaceKHR surface;
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
@@ -41,7 +41,7 @@ VkSurfaceKHR VulkanDevice::createSurface(GLFWwindow* window)
 /// VkInstanceを作成する
 /// </summary>
 /// <returns></returns>
-VkInstance VulkanDevice::CreateInstance()
+VkInstance VulkanContext::CreateInstance()
 {
     // validation layers
     if (enableValidationLayers && !checkValidationLayerSupport()) {
@@ -94,7 +94,7 @@ VkInstance VulkanDevice::CreateInstance()
     return instance;
 }
 
-std::vector<const char*> VulkanDevice::getRequiredExtensions()
+std::vector<const char*> VulkanContext::getRequiredExtensions()
 {
     uint32_t glfwExtensionCount = 0;
     const char** glfwExtensions;
@@ -115,7 +115,7 @@ std::vector<const char*> VulkanDevice::getRequiredExtensions()
 /// </summary>
 /// <param name="vkInstance"></param>
 /// <returns></returns>
-VkPhysicalDevice VulkanDevice::pickPhysicalDevice(VkInstance vkInstance) {
+VkPhysicalDevice VulkanContext::pickPhysicalDevice(VkInstance vkInstance) {
     uint32_t deviceCount = 0;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
@@ -156,7 +156,7 @@ VkPhysicalDevice VulkanDevice::pickPhysicalDevice(VkInstance vkInstance) {
     return physicalDevice;
 }
 
-bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice device)
+bool VulkanContext::isDeviceSuitable(VkPhysicalDevice device)
 {
     auto indices = queue.FindGraphicsQueueFamilies(device, surface);
     bool extensionsSupported = checkDeviceExtensionSupport(device);
@@ -173,7 +173,7 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice device)
     return indices.IsComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
 }
 
-SwapChainSupportDetails VulkanDevice::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
+SwapChainSupportDetails VulkanContext::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
     SwapChainSupportDetails details;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
 
@@ -196,7 +196,7 @@ SwapChainSupportDetails VulkanDevice::querySwapChainSupport(VkPhysicalDevice dev
 /// <summary>
 /// デバイスが必要な拡張機能をサポートしているか確認する
 /// </summary>
-bool VulkanDevice::checkDeviceExtensionSupport(VkPhysicalDevice device) {
+bool VulkanContext::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     uint32_t extensionCount;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
@@ -210,7 +210,7 @@ bool VulkanDevice::checkDeviceExtensionSupport(VkPhysicalDevice device) {
 }
 
 
-int VulkanDevice::rateDeviceSuitability(VkPhysicalDevice device)
+int VulkanContext::rateDeviceSuitability(VkPhysicalDevice device)
 {
     VkPhysicalDeviceProperties deviceProperties;
     VkPhysicalDeviceFeatures deviceFeatures;
@@ -239,7 +239,7 @@ int VulkanDevice::rateDeviceSuitability(VkPhysicalDevice device)
 /// <summary>
   /// 論理デバイスを作成する
   /// </summary>
-VkDevice VulkanDevice::createLogicalDevice(VkPhysicalDevice physicalDevice, QueueFamilyIndices queueFamilyIndices)
+VkDevice VulkanContext::createLogicalDevice(VkPhysicalDevice physicalDevice, QueueFamilyIndices queueFamilyIndices)
 {
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
     auto uniqueQueueFamilies = queueFamilyIndices.UniqueFamilies();
@@ -290,7 +290,7 @@ VkDevice VulkanDevice::createLogicalDevice(VkPhysicalDevice physicalDevice, Queu
 #pragma endregion
 
 #pragma region Validation Layers
-bool VulkanDevice::checkValidationLayerSupport()
+bool VulkanContext::checkValidationLayerSupport()
 {
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -316,7 +316,7 @@ bool VulkanDevice::checkValidationLayerSupport()
     return true;
 }
 
-void VulkanDevice::setupDebugMessenger(VkInstance vkInstance)
+void VulkanContext::setupDebugMessenger(VkInstance vkInstance)
 {
     if (!enableValidationLayers) return;
 
@@ -338,7 +338,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     return VK_FALSE;
 }
 
-void VulkanDevice::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
+void VulkanContext::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
 {
     createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -347,7 +347,7 @@ void VulkanDevice::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateI
     createInfo.pfnUserCallback = debugCallback;
 }
 
-VkResult VulkanDevice::CreateDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsObjectNameInfoEXT* pNameInfo)
+VkResult VulkanContext::CreateDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsObjectNameInfoEXT* pNameInfo)
 {
     auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT");
     if (func != nullptr) {
@@ -358,7 +358,7 @@ VkResult VulkanDevice::CreateDebugUtilsObjectNameEXT(VkDevice device, const VkDe
     }
 }
 
-VkResult VulkanDevice::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
+VkResult VulkanContext::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
 {
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
@@ -369,7 +369,7 @@ VkResult VulkanDevice::CreateDebugUtilsMessengerEXT(VkInstance instance, const V
     }
 }
 
-void VulkanDevice::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
+void VulkanContext::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {

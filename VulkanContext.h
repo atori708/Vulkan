@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
@@ -13,7 +13,7 @@
 #include "VulkanDefine.h"
 #include "VulkanQueue.h"
 
-class VulkanDevice
+class VulkanContext
 {
 private:
 

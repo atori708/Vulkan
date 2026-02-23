@@ -1,5 +1,5 @@
 #include "VulkanSwapChain.h"
-#include "VulkanDevice.h"
+#include "VulkanContext.h"
 
 // TODO SwapChainがデプスとかを作ってるのはおかしいので、別のクラスに分ける
 
