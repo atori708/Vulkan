@@ -1,3 +1,4 @@
+#define STB_IMAGE_IMPLEMENTATION
 #include "VulkanTextureCreator.h"
 
 VulkanTextureCreator::VulkanTextureCreator(VkDevice device, VkPhysicalDevice physicalDevice, VulkanBufferCreator* bufferCreator, VulkanResources* vulkanResources, VulkanCommandBuffer* commandBuffer, float maxAnisotropy)
