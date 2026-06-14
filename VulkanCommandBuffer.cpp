@@ -140,6 +140,7 @@ std::vector<VkCommandBuffer> VulkanCommandBuffer::createCommandBuffers(const VkC
     if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate command buffers!");
     }
+
     return commandBuffers;
 }
 

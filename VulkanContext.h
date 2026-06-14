@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
@@ -13,7 +13,7 @@
 #include "VulkanDefine.h"
 #include "VulkanQueue.h"
 
-class VulkanDevice
+class VulkanContext
 {
 private:
 
@@ -45,7 +45,7 @@ private:
 public:
     VkInstance GetInstance() { return instance; }
     VkPhysicalDevice GetPhysicalDevice() { return physicalDevice; }
-    VkDevice GetLogicalDevice() { return logicalDevice; }
+    VkDevice GetDevice() { return logicalDevice; }
     VkQueue GetGraphicsQueue() { return graphicsQueue; }
     VkQueue GetPresentQueue() { return presentQueue; }
     VkSurfaceKHR GetSurface() { return surface; }
@@ -54,6 +54,8 @@ public:
 public:
     void InitializeVulkan(GLFWwindow* window, VulkanQueue& queue);
     void CleanupVulkan();
+
+    VkDescriptorPool createDescriptorPool(const VkDevice device, const size_t maxSets);
 
 
 private:
@@ -73,7 +75,6 @@ private:
 #pragma region Logical Device
     VkDevice createLogicalDevice(VkPhysicalDevice physicalDevice, QueueFamilyIndices queueFamilyIndices);
 #pragma endregion
-
 
 
 #pragma region Validation Layers

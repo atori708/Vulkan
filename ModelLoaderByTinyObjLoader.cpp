@@ -1,4 +1,5 @@
-﻿#include "ModelLoaderByTinyObjLoader.h"
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "ModelLoaderByTinyObjLoader.h"
 #include <stdexcept>
 
 /// <summary>

@@ -30,26 +30,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -138,10 +138,12 @@
     <ClCompile Include="ModelLoaderAssimp.cpp" />
     <ClCompile Include="ModelLoaderByTinyObjLoader.cpp" />
     <ClCompile Include="ShaderCPUResources.cpp" />
+    <ClCompile Include="VulkanApp.cpp" />
     <ClCompile Include="VulkanBufferCreator.cpp" />
+    <ClCompile Include="VulkanStatus.cpp" />
     <ClCompile Include="VulkanTextureCreator.cpp" />
     <ClCompile Include="VulkanCommandBuffer.cpp" />
-    <ClCompile Include="VulkanDevice.cpp" />
+    <ClCompile Include="VulkanContext.cpp" />
     <ClCompile Include="VulkanQueue.cpp" />
     <ClCompile Include="VulkanResources.cpp" />
     <ClCompile Include="VulkanResourceUtility.cpp" />
@@ -158,12 +160,15 @@
     <ClInclude Include="MeshFormat.h" />
     <ClInclude Include="ModelLoaderAssimp.h" />
     <ClInclude Include="ModelLoaderByTinyObjLoader.h" />
+    <ClInclude Include="Scene\Camera.h" />
     <ClInclude Include="ShaderCPUResources.h" />
     <ClInclude Include="ShaderPropertyApplier.h" />
+    <ClInclude Include="VulkanApp.h" />
     <ClInclude Include="VulkanBufferCreator.h" />
+    <ClInclude Include="VulkanStatus.h" />
     <ClInclude Include="VulkanTextureCreator.h" />
     <ClInclude Include="VulkanCommandBuffer.h" />
-    <ClInclude Include="VulkanDevice.h" />
+    <ClInclude Include="VulkanContext.h" />
     <ClInclude Include="VulkanQueue.h" />
     <ClInclude Include="VulkanResources.h" />
     <ClInclude Include="VulkanDefine.h" />
