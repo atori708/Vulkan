@@ -144,17 +144,17 @@ void VulkanApp::Draw(int currentFrame)
     }
 
     // しばらくたったらテクスチャを差し替える
-    //if (currentFrame == 2000)
-    //{
-    //    // TODO なんかValdationLayerでエラー出てるっぽいので見直す
-    //    VkDescriptorImageInfo imageInfo{};
-    //    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    //    imageInfo.imageView = textureImageView;
-    //    imageInfo.sampler = textureSampler;
-    //    updateImageDescriptorSets(MAX_FRAMES_IN_FLIGHT, shaderCPUResource, imageInfo);
+    if (currentFrame == 2000)
+    {
+        // TODO なんかValdationLayerでエラー出てるっぽいので見直す
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = textureImageView;
+        imageInfo.sampler = textureSampler;
+        updateImageDescriptorSets(MAX_FRAMES_IN_FLIGHT, shaderCPUResource, imageInfo);
 
-    //    shaderPropertyApplier->SetVector3("color", glm::vec3(0, 1, 1));
-    //}
+        shaderPropertyApplier->SetVector3("color", glm::vec3(0, 1, 1));
+    }
 
     vkResetFences(device, 1, &inFlightFences[frameIndex]);
 
