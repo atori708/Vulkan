@@ -137,7 +137,9 @@
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="ModelLoaderAssimp.cpp" />
     <ClCompile Include="ModelLoaderByTinyObjLoader.cpp" />
-    <ClCompile Include="ShaderCPUResources.cpp" />
+    <ClCompile Include="Shader.cpp" />
+    <ClCompile Include="CameraUniforms.cpp" />
+    <ClCompile Include="Material.cpp" />
     <ClCompile Include="VulkanApp.cpp" />
     <ClCompile Include="VulkanBufferCreator.cpp" />
     <ClCompile Include="VulkanStatus.cpp" />
@@ -161,8 +163,9 @@
     <ClInclude Include="ModelLoaderAssimp.h" />
     <ClInclude Include="ModelLoaderByTinyObjLoader.h" />
     <ClInclude Include="Scene\Camera.h" />
-    <ClInclude Include="ShaderCPUResources.h" />
-    <ClInclude Include="ShaderPropertyApplier.h" />
+    <ClInclude Include="Shader.h" />
+    <ClInclude Include="CameraUniforms.h" />
+    <ClInclude Include="Material.h" />
     <ClInclude Include="VulkanApp.h" />
     <ClInclude Include="VulkanBufferCreator.h" />
     <ClInclude Include="VulkanStatus.h" />

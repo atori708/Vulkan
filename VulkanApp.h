@@ -10,8 +10,9 @@
 #include "VulkanCommandBuffer.h"
 #include "VulkanBufferCreator.h"
 #include "VulkanTextureCreator.h"
-#include "ShaderCPUResources.h"
-#include "ShaderPropertyApplier.h"
+#include "Shader.h"
+#include "CameraUniforms.h"
+#include "Material.h"
 
 #include "IModelLoader.h"
 #include "ModelLoaderByTinyObjLoader.h"
@@ -77,8 +78,9 @@ private:
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
 
-    ShaderCPUResource* shaderCPUResource;
-    ShaderPropertyApplier* shaderPropertyApplier;
+    Shader* shader;
+    CameraUniforms* sceneUniforms;
+    Material* material;
 
     IModelLoader* modelLoader;
     Mesh* mesh;
@@ -127,8 +129,7 @@ private:
     void recordCommandBuffer(uint32_t frameIndex, VkCommandBuffer commandBuffer, uint32_t swapChainBufferIndex, VkExtent2D swapChainExtent);
     void recordCommandBuffer(uint32_t frameIndex, VkCommandBuffer commandBuffer, VkRenderPass renderPass, uint32_t swapChainBufferIndex, VkExtent2D swapChainExtent);
 
-    void updateCameraUniformBuffers(ShaderPropertyApplier* shaderPropertyApplier, const Camera& camera);
-    void updateModelUniformBuffers(ShaderPropertyApplier* shaderPropertyApplier);
-    void updateImageDescriptorSets(const int bufferCount, const ShaderCPUResource* shaderResource, const VkDescriptorImageInfo imageInfo);
+    void updateCameraUniformBuffers(CameraUniforms* sceneUniforms, const Camera& camera);
+    void updateModelUniformBuffers(Material* material);
 };
 

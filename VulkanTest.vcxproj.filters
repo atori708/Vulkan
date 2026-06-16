@@ -51,7 +51,13 @@
     <ClCompile Include="ModelLoaderAssimp.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="ShaderCPUResources.cpp">
+    <ClCompile Include="Shader.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraUniforms.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Material.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="VulkanApp.cpp">
@@ -111,10 +117,13 @@
     <ClInclude Include="ModelLoaderAssimp.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="ShaderCPUResources.h">
+    <ClInclude Include="Shader.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="ShaderPropertyApplier.h">
+    <ClInclude Include="CameraUniforms.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Material.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Scene\Camera.h">

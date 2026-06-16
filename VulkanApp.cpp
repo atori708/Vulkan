@@ -37,8 +37,9 @@ VulkanApp::VulkanApp(GLFWwindow* window)
     // DescriptorPoolとDescriptorSetの作成
     descriptorPool = vulkanContext.createDescriptorPool(device, MAX_FRAMES_IN_FLIGHT * 2); // DescriptorSetsはCamera用とModel用で2種類あるので、2倍の数を作成する必要がある
 
-    shaderCPUResource = new ShaderCPUResource(device, bufferCreator, textureCreator, vulkanResources, descriptorPool, MAX_FRAMES_IN_FLIGHT);
-    shaderPropertyApplier = new ShaderPropertyApplier(shaderCPUResource);
+    shader = new Shader(device);
+    sceneUniforms = new CameraUniforms(device, bufferCreator, vulkanResources, descriptorPool, shader, MAX_FRAMES_IN_FLIGHT);
+    material = new Material(device, bufferCreator, textureCreator, vulkanResources, descriptorPool, shader, MAX_FRAMES_IN_FLIGHT);
 
     // CommandPool、CommandBufferの作成
     commandPool = vulkanCommandBuffer->createCommandPool(graphicsQueueFamilyIndicies, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -48,7 +49,7 @@ VulkanApp::VulkanApp(GLFWwindow* window)
     // シェーダモジュールとグラフィックスパイプラインの作成
     vertShaderModule = vulkanResources->createShaderModule("shaders/vert.spv");
     fragShaderModule = vulkanResources->createShaderModule("shaders/frag.spv");
-    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { shaderCPUResource->CameraDescriptorSetLayout(), shaderCPUResource->ModelDescriptorSetLayout() };
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { shader->CameraDescriptorSetLayout(), shader->MaterialDescriptorSetLayout() };
     graphicsPipeline = createGraphicsPipeline(renderPass, descriptorSetLayouts, vertShaderModule, fragShaderModule);
 
     modelLoader = new ModelLoaderAssimp();
@@ -93,9 +94,14 @@ VulkanApp::~VulkanApp()
     vkDestroyBuffer(device, vertexAndIndexBuffer, nullptr);
     vkFreeMemory(device, vertexAndIndexBufferMemory, nullptr);
 
-    shaderCPUResource->Release(device);
-    delete shaderCPUResource;
-    delete shaderPropertyApplier;
+    material->Release(device);
+    delete material;
+
+    sceneUniforms->Release(device);
+    delete sceneUniforms;
+
+    shader->Release(device);
+    delete shader;
 
     destroySyncObjects();
 
@@ -127,9 +133,10 @@ void VulkanApp::Draw(int currentFrame)
     auto swapChainExtent = vulkanSwapChain->GetSwapChainExtent();
 
     // Uniform Bufferの更新
-    updateCameraUniformBuffers(shaderPropertyApplier, camera);
-    updateModelUniformBuffers(shaderPropertyApplier);
-    shaderPropertyApplier->Apply(frameIndex);
+    updateCameraUniformBuffers(sceneUniforms, camera);
+    updateModelUniformBuffers(material);
+    sceneUniforms->Apply(frameIndex);
+    material->Apply(frameIndex);
 
     // SwapChainが古くなっている場合は再作成する
     uint32_t imageIndex;
@@ -146,14 +153,8 @@ void VulkanApp::Draw(int currentFrame)
     // しばらくたったらテクスチャを差し替える
     if (currentFrame == 2000)
     {
-        // TODO なんかValdationLayerでエラー出てるっぽいので見直す
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureImageView;
-        imageInfo.sampler = textureSampler;
-        updateImageDescriptorSets(MAX_FRAMES_IN_FLIGHT, shaderCPUResource, imageInfo);
-
-        shaderPropertyApplier->SetVector3("color", glm::vec3(0, 1, 1));
+        material->SetTexture(textureImageView, textureSampler);
+        material->SetVector3("color", glm::vec3(0, 1, 1));
     }
 
     vkResetFences(device, 1, &inFlightFences[frameIndex]);
@@ -202,16 +203,16 @@ void VulkanApp::Draw(int currentFrame)
     }
 }
 
-void VulkanApp::updateCameraUniformBuffers(ShaderPropertyApplier* shaderPropertyApplier, const Camera& camera)
+void VulkanApp::updateCameraUniformBuffers(CameraUniforms* sceneUniforms, const Camera& camera)
 {
     auto view = glm::lookAt(camera.position, camera.lookat, camera.up);
     auto proj = glm::perspective(glm::radians(camera.fov), camera.aspect, camera.nearClip, camera.farClip);
     proj[1][1] *= -1; // GLMはY座標が反転しているので、Vulkanに合わせて反転する
-    shaderPropertyApplier->SetMatrix4x4("view", view);
-    shaderPropertyApplier->SetMatrix4x4("proj", proj);
+    sceneUniforms->SetMatrix4x4("view", view);
+    sceneUniforms->SetMatrix4x4("proj", proj);
 }
 
-void VulkanApp::updateModelUniformBuffers(ShaderPropertyApplier* shaderPropertyApplier)
+void VulkanApp::updateModelUniformBuffers(Material* material)
 {
     static auto startTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
@@ -219,35 +220,7 @@ void VulkanApp::updateModelUniformBuffers(ShaderPropertyApplier* shaderPropertyA
 
     // 回転させる
     auto model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    shaderPropertyApplier->SetMatrix4x4("model", model);
-}
-
-/// <summary>
-/// テクスチャの差し替え
-/// </summary>
-/// <param name="modelUniformBuffers"></param>
-/// <param name="imageInfo"></param>
-/// <param name="modelDescriptorSets"></param>
-void VulkanApp::updateImageDescriptorSets(const int bufferCount, const ShaderCPUResource* shaderResource, const VkDescriptorImageInfo imageInfo)
-{
-    for (size_t i = 0; i < bufferCount; i++)
-    {
-        std::array<VkWriteDescriptorSet, 1> descriptorWrites{};
-
-        // buffer更新
-        VkDescriptorBufferInfo bufferInfo{};
-
-        // image更新
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = *shaderResource->ModelDescriptorSet(i);
-        descriptorWrites[0].dstBinding = 1;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-    }
+    material->SetMatrix4x4("model", model);
 }
 
 /// <summary>
@@ -696,8 +669,8 @@ void VulkanApp::recordCommandBuffer(uint32_t frameIndex, VkCommandBuffer command
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, shaderCPUResource->CameraDescriptorSet(frameIndex), 0, nullptr);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, shaderCPUResource->ModelDescriptorSet(frameIndex), 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, sceneUniforms->DescriptorSet(frameIndex), 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, material->DescriptorSet(frameIndex), 0, nullptr);
 
     VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
     VkDeviceSize offsets[] = { 0 };
@@ -757,8 +730,8 @@ void VulkanApp::recordCommandBuffer(uint32_t frameIndex, VkCommandBuffer command
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, shaderCPUResource->CameraDescriptorSet(frameIndex), 0, nullptr);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, shaderCPUResource->ModelDescriptorSet(frameIndex), 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, sceneUniforms->DescriptorSet(frameIndex), 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, material->DescriptorSet(frameIndex), 0, nullptr);
 
     VkBuffer vertexBuffers[] = { vertexAndIndexBuffer };
     VkDeviceSize offsets[] = { 0 };
